@@ -1,0 +1,18 @@
+# secrets
+.env
+.env.*
+!.env.example
+*.pem
+id_ed25519*
+
+# dependencies and build output
+node_modules/
+dist/
+build/
+coverage/
+.vite/
+
+# logs and OS files
+*.log
+.DS_Store
+Thumbs.db
