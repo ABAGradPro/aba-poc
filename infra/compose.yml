@@ -1,0 +1,22 @@
+name: aba-poc
+services:
+  db:
+    image: postgres:17-alpine
+    environment: { POSTGRES_DB: aba, POSTGRES_USER: aba, POSTGRES_PASSWORD: "${DB_PASSWORD}" }
+    ports: ["127.0.0.1:5432:5432"]
+    volumes: ["dbdata:/var/lib/postgresql/data"]
+  hermes:
+    image: nousresearch/hermes-agent:latest
+    container_name: hermes
+    restart: unless-stopped
+    command: gateway run
+    environment: { PUID: "1000", PGID: "1000" }
+    ports: ["127.0.0.1:8642:8642"]
+    volumes:
+      - ${HOME}/aba-data/hermes:/opt/data
+      - ${HOME}/aba-data/workspaces:/workspaces
+    shm_size: "1gb"
+    security_opt: ["no-new-privileges:true"]
+    deploy: { resources: { limits: { memory: 3g, cpus: "2.0" } } }
+volumes:
+  dbdata: {}
