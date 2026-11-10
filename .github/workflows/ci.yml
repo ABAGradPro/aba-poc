@@ -14,6 +14,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter api exec prisma generate
       - run: pnpm -r --if-present run lint
       - run: pnpm -r --if-present run test
       - run: pnpm -r --if-present run build

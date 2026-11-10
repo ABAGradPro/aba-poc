@@ -1,10 +1,19 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller.js';
-import { AppService } from './app.service.js';
+import { AuthModule } from './auth/auth.module.js';
+import { PrismaModule } from './prisma/prisma.module.js';
 
 @Module({
-  imports: [],
+  imports: [
+    // A generous default for every route; login sets its own 5-per-minute limit.
+    ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 120 }]),
+    PrismaModule,
+    AuthModule,
+  ],
   controllers: [AppController],
-  providers: [AppService],
+  // The throttler runs before the auth guard, so too many login attempts get 429.
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}
