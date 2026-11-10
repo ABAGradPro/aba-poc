@@ -17,6 +17,7 @@ One entry per step: date, who, what was done, and whether its check passed.
 - Step 4 — Hermes on google/gemma-4-31b-it via OpenRouter, sandboxed in Docker; answers as ABA with AGENTS.md rules via CLI and API; /etc/x write denied; /home empty; /health ok, no-key requests get 401 (2026-11-09).
 - Step 5 — Five Hermes skills (aba-generate-spa, aba-edit-element, aba-verify, aba-publish, aba-rollback) installed; bakery page generated with unique data-aba-id on all 72 body elements and no inline styles; aba-verify (check.sh, headless Chromium) reports "Uncaught Error: x"; aba-edit-element returns raw JSON keeping the data-aba-id (2026-11-10).
 - Step 6 — Accounts: Prisma 7.10.1 + PostgreSQL (User, Project, Version, Run), Argon2id password hashes, httpOnly SameSite=Lax JWT cookie, guard on every route, 5 logins/minute (6th = 429); login, register and dashboard pages; unit + e2e tests pass; checked in the browser (2026-11-10).
+- Step 7 — Projects as git folders (first commit "init"), owner-only (404 for others), Hermes Runs API bridge: POST /api/projects/:id/runs answers 202 in 0.03 s, 409 when busy, live SSE progress, approvals denied, 10-minute limit, friendly failure when Hermes is down; project list and live progress page; unit + e2e tests (fake Hermes) pass; real run checked in the browser (2026-11-10).
 
 ## NFR1 mini-benchmark (Step 8)
 
