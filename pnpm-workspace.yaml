@@ -1,2 +1,11 @@
 packages:
   - "apps/*"
+
+# Install scripts of dependencies. All of these ship ready-made binaries that work
+# without their scripts (argon2 hashing, Prisma generate/migrate and esbuild were
+# checked), so none of them is allowed to run code at install time.
+allowBuilds:
+  "@prisma/engines": false
+  argon2: false
+  esbuild: false
+  prisma: false
