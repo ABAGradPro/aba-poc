@@ -120,3 +120,103 @@ button.link {
     color: #ff8a80;
   }
 }
+
+/* Step 7: projects and live progress */
+.card {
+  text-align: left; /* the Vite starter centres everything */
+}
+
+.card.wide {
+  max-width: 720px;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex-direction: row;
+}
+
+.row input {
+  flex: 1 1 240px;
+  margin-top: 0;
+}
+
+textarea {
+  margin-top: 6px;
+  padding: 10px 12px;
+  font: inherit;
+  color: var(--text-h);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  resize: vertical;
+}
+
+textarea:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.projects {
+  padding-left: 1.2em;
+}
+
+.projects li {
+  margin: 6px 0;
+}
+
+.muted {
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.progress h2 {
+  margin: 24px 0 8px;
+  font-size: 1.1rem;
+  color: var(--text-h);
+}
+
+.progress ol {
+  padding-left: 1.2em;
+}
+
+.step {
+  margin: 4px 0;
+}
+
+.step.done {
+  color: #2e7d32;
+  font-weight: 600;
+}
+
+.step.error {
+  color: #c62828;
+  font-weight: 600;
+}
+
+.reply {
+  margin-top: 12px;
+  padding: 12px;
+  border-left: 4px solid var(--accent);
+  background: var(--accent-bg);
+  white-space: pre-wrap;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (prefers-color-scheme: dark) {
+  .step.done {
+    color: #81c784;
+  }
+  .step.error {
+    color: #ff8a80;
+  }
+}

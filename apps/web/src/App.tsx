@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react'
-import { api, type User } from './api'
+import { api, type Project, type User } from './api'
 import { AuthForm } from './AuthForm'
 import { Dashboard } from './Dashboard'
+import { ProjectPage } from './ProjectPage'
 import './App.css'
 
-type View = 'loading' | 'login' | 'register' | 'dashboard'
+type View = 'loading' | 'login' | 'register' | 'dashboard' | 'project'
 
 export default function App() {
   const [view, setView] = useState<View>('loading')
   const [user, setUser] = useState<User | null>(null)
+  const [project, setProject] = useState<Project | null>(null)
 
   useEffect(() => {
     // Already logged in? The cookie is httpOnly, so ask the API.
@@ -29,11 +31,31 @@ export default function App() {
   async function logout() {
     await api.logout().catch(() => undefined)
     setUser(null)
+    setProject(null)
     setView('login')
   }
 
   if (view === 'loading') return <p className="loading">Loading…</p>
-  if (view === 'dashboard' && user) return <Dashboard user={user} onLogout={logout} />
+  if (view === 'project' && user && project)
+    return (
+      <ProjectPage
+        user={user}
+        project={project}
+        onLogout={logout}
+        onBack={() => setView('dashboard')}
+      />
+    )
+  if (view === 'dashboard' && user)
+    return (
+      <Dashboard
+        user={user}
+        onLogout={logout}
+        onOpen={(p) => {
+          setProject(p)
+          setView('project')
+        }}
+      />
+    )
   return (
     <AuthForm
       key={view}
