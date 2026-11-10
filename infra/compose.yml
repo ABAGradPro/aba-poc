@@ -10,7 +10,7 @@ services:
     container_name: hermes
     restart: unless-stopped
     command: gateway run
-    environment: { PUID: "1000", PGID: "1000" }
+    environment: { PUID: "1000", PGID: "1000", HERMES_WRITE_SAFE_ROOT: "/opt/data:/workspaces" }
     ports: ["127.0.0.1:8642:8642"]
     volumes:
       - ${HOME}/aba-data/hermes:/opt/data
