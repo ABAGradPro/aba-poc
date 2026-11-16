@@ -38,7 +38,24 @@ export const FRIENDLY = {
   failed: 'Something went wrong while building. Please try again.',
   noPage: 'The AI builder finished without making a page. Please try again with more detail.',
   badEdit: "The AI's answer could not be used, so nothing was changed. Please try again or describe the change differently.",
+  notLive: 'The page could not be confirmed live on the server, so it was not marked as published.',
 };
+
+/** Where published apps are served (the management droplet's Nginx, Step 2). */
+export function publishBase(): string {
+  return (process.env.PUBLISH_BASE_URL ?? 'http://157.230.117.76').replace(/\/+$/, '');
+}
+
+/** What Hermes is asked to do to publish or roll back (guide, Step 11). */
+export function publishInput(folder: string, slug: string): string {
+  return `Use the aba-publish skill. Workspace: ${hermesPath(folder)}. Slug: ${slug}.`;
+}
+export function rollbackInput(slug: string): string {
+  return `Use the aba-rollback skill. Slug: ${slug}.`;
+}
+
+const RELEASE_INSTRUCTIONS =
+  'Follow the skill exactly. Do not create, change or delete any files in the workspace. Finish with one short sentence for a non-technical user.';
 
 /** What Hermes is asked to do for a prompt (guide, Step 8). */
 export function generationInput(folder: string, prompt: string): string {
@@ -145,6 +162,35 @@ export class RunsService implements OnModuleInit {
       instructions: EDIT_INSTRUCTIONS,
       sessionId: `${project.id}-edit-${runId}`, // a fresh conversation for each edit
       finish: (id, live, output) => this.finishEdit(id, project, elementId, live, output),
+    }));
+  }
+
+  /** Publish the current version to the droplet with the aba-publish skill (guide, Step 11). */
+  async startPublish(userId: string, projectId: string, slug: string): Promise<{ runId: string }> {
+    const project = await this.projects.getOwned(userId, projectId);
+    await this.projects.assertIdle(project.id, 'published');
+    const taken = await this.prisma.project.findFirst({ where: { slug, NOT: { id: project.id } } });
+    if (taken) throw new ConflictException('That address is already used by another project. Please choose another.');
+    const page = await readFile(path.join(hostPath(project.folder), 'index.html'), 'utf8').catch(() => null);
+    if (page === null) throw new BadRequestException('Build the app first, then publish it.');
+    return this.launch(project, `publish ${slug}`, (runId) => ({
+      input: publishInput(project.folder, slug),
+      instructions: RELEASE_INSTRUCTIONS,
+      sessionId: `${project.id}-publish-${runId}`,
+      finish: (id, live, output) => this.finishPublish(id, project, slug, live, output),
+    }));
+  }
+
+  /** Point the live address back at the previous release with the aba-rollback skill. */
+  async startRollback(userId: string, projectId: string): Promise<{ runId: string }> {
+    const project = await this.projects.getOwned(userId, projectId);
+    if (!project.slug) throw new BadRequestException('Publish the app first; then you can roll back.');
+    const slug = project.slug;
+    return this.launch(project, `rollback ${slug}`, (runId) => ({
+      input: rollbackInput(slug),
+      instructions: RELEASE_INSTRUCTIONS,
+      sessionId: `${project.id}-rollback-${runId}`,
+      finish: (id, live, output) => this.finishRollback(id, project, slug, live, output),
     }));
   }
 
@@ -306,6 +352,57 @@ export class RunsService implements OnModuleInit {
       this.logger.error(`Run ${runId}: could not apply the edit: ${String(err)}`);
       await this.setStatus(runId, live, 'failed', message);
     }
+  }
+
+  /** Fetches the live page; returns its HTML, or null if it is not served. */
+  private async fetchLive(url: string): Promise<string | null> {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(10_000), headers: { 'Cache-Control': 'no-cache' } });
+      return res.ok ? await res.text() : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * After a publish run: the API checks for itself that the live page is exactly this
+   * project's index.html before it records the address. Hermes' own words explain a refusal
+   * (for example aba-verify failing).
+   */
+  private async finishPublish(runId: string, project: Project, slug: string, live: LiveRun, output: string) {
+    const url = `${publishBase()}/${slug}/`;
+    const local = await readFile(path.join(hostPath(project.folder), 'index.html'), 'utf8').catch(() => '');
+    const served = await this.fetchLive(url);
+    if (served === null || served !== local) {
+      this.logger.warn(`Run ${runId}: ${url} is ${served === null ? 'not served' : 'not this version'}`);
+      const why = output.trim() ? `Not published: ${short(output, 400)}` : FRIENDLY.notLive;
+      await this.setStatus(runId, live, 'failed', why);
+      return;
+    }
+    await this.prisma.project.update({
+      where: { id: project.id },
+      data: { slug, liveUrl: url, publishedAt: new Date() },
+    });
+    this.emit(live, { type: 'published', text: url });
+    await this.setStatus(runId, live, 'completed', `Your app is live at ${url}`);
+  }
+
+  /** After a rollback run: confirm the address still serves a page. */
+  private async finishRollback(runId: string, project: Project, slug: string, live: LiveRun, output: string) {
+    const url = `${publishBase()}/${slug}/`;
+    if ((await this.fetchLive(url)) === null) {
+      await this.setStatus(runId, live, 'failed', output.trim() ? short(output, 400) : FRIENDLY.notLive);
+      return;
+    }
+    // The skill stops when there is nothing to go back to; Hermes then says so.
+    const failedWords = /no previous release|nothing to roll back|cannot roll back|could not roll back|rollback failed/i;
+    if (failedWords.test(output)) {
+      await this.setStatus(runId, live, 'failed', short(output, 400));
+      return;
+    }
+    await this.prisma.project.update({ where: { id: project.id }, data: { publishedAt: new Date() } });
+    this.emit(live, { type: 'published', text: url });
+    await this.setStatus(runId, live, 'completed', `The previous version is live again at ${url}`);
   }
 
   /** Forwards one Hermes event; returns the outcome when the run is over. */

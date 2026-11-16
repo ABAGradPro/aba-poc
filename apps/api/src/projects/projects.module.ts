@@ -9,9 +9,10 @@ import { VersionsService } from '../versions/versions.service.js';
 import { PreviewServer } from '../preview/preview.server.js';
 import { EditsController } from '../edits/edits.controller.js';
 import { EditsService } from '../edits/edits.service.js';
+import { PublishController } from '../publish/publish.controller.js';
 
 @Module({
-  controllers: [ProjectsController, RunsController, VersionsController, EditsController],
+  controllers: [ProjectsController, RunsController, VersionsController, EditsController, PublishController],
   providers: [ProjectsService, RunsService, HermesClient, VersionsService, PreviewServer, EditsService],
   exports: [ProjectsService, RunsService],
 })

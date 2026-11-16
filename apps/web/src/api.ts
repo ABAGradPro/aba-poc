@@ -7,6 +7,9 @@ export interface Project {
   id: string
   name: string
   folder: string
+  slug: string | null
+  liveUrl: string | null
+  publishedAt: string | null
   createdAt: string
 }
 
@@ -23,6 +26,10 @@ export interface Version {
 /** The preview server: a different origin from this GUI, so generated code cannot reach the session. */
 export const PREVIEW_ORIGIN: string =
   (import.meta.env.VITE_PREVIEW_ORIGIN as string | undefined) ?? 'http://localhost:4000'
+
+/** Where published apps appear (the management droplet). */
+export const PUBLISH_BASE: string =
+  (import.meta.env.VITE_PUBLISH_BASE as string | undefined) ?? 'http://157.230.117.76'
 
 export type RunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'timeout'
 
@@ -84,6 +91,9 @@ export const api = {
     call<Project>(`/projects/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
   deleteProject: (id: string) => call<void>(`/projects/${id}`, { method: 'DELETE' }),
   versions: (projectId: string) => call<Version[]>(`/projects/${projectId}/versions`),
+  publish: (projectId: string, slug: string) =>
+    call<{ runId: string }>(`/projects/${projectId}/publish`, json({ slug })),
+  rollback: (projectId: string) => call<{ runId: string }>(`/projects/${projectId}/rollback`, { method: 'POST' }),
   restoreVersion: (projectId: string, versionId: string) =>
     call<Version>(`/projects/${projectId}/versions/${versionId}/restore`, { method: 'POST' }),
   editElement: (projectId: string, id: string, prompt: string) =>
