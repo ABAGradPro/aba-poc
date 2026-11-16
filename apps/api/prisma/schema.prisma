@@ -20,6 +20,10 @@ model Project {
   name      String
   /// Folder under WORKSPACES_DIR: the name made safe plus the first 8 characters of the id.
   folder    String    @unique
+  /// Address on the management droplet: http://<droplet>/<slug>/ (Step 11). Unique so projects never overwrite each other.
+  slug        String?   @unique
+  liveUrl     String?
+  publishedAt DateTime?
   ownerId   String    @db.Uuid
   owner     User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   createdAt DateTime  @default(now())

@@ -1,9 +1,9 @@
 import { createServer, type Server } from 'node:http';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 
-export type Script = 'complete' | 'approval' | 'slow' | 'hang' | 'nopage' | 'edit';
+export type Script = 'complete' | 'approval' | 'slow' | 'hang' | 'nopage' | 'edit' | 'release' | 'verifyfail';
 
 /** The page the fake Hermes "builds": the <p> and <script> have no data-aba-id on purpose. */
 export const FAKE_PAGE =
@@ -21,6 +21,11 @@ export class FakeHermes {
   workspaces = '';
   /** What the fake answers for script 'edit' (the aba-edit-element JSON). */
   editReply = '';
+  /** A folder standing in for the droplet's /var/www/apps (served by a test web server). */
+  droplet = '';
+  /** Every release per slug, oldest first, like /var/www/releases/<slug>/. */
+  readonly releases = new Map<string, string[]>();
+  private output = 'Built it.';
 
   async start(): Promise<void> {
     this.server = createServer((req, res) => {
@@ -34,9 +39,11 @@ export class FakeHermes {
           return;
         }
         if (req.method === 'POST' && req.url === '/v1/runs') {
+          this.output = this.script === 'edit' ? this.editReply : 'Built it.';
+          this.release(String(body?.input ?? ''));
           // Like Hermes, write into the folder named in the prompt ("Workspace: /workspaces/<folder>").
           const folder = /Workspace: \/workspaces\/([a-z0-9-]+)/.exec(String(body?.input ?? ''))?.[1];
-          if (this.workspaces && !['nopage', 'edit'].includes(this.script) && folder) {
+          if (this.workspaces && !['nopage', 'edit', 'release', 'verifyfail'].includes(this.script) && folder) {
             const dir = path.join(this.workspaces, folder);
             mkdirSync(dir, { recursive: true });
             writeFileSync(path.join(dir, 'index.html'), FAKE_PAGE);
@@ -56,7 +63,7 @@ export class FakeHermes {
           if (this.script === 'hang') return; // never finishes
           const finish = () => {
             send({ event: 'tool.completed', tool: 'write_file' });
-            send({ event: 'run.completed', output: this.script === 'edit' ? this.editReply : 'Built it.' });
+            send({ event: 'run.completed', output: this.output });
             res.end();
           };
           if (this.script === 'slow') setTimeout(finish, 1500);
@@ -72,6 +79,39 @@ export class FakeHermes {
     });
     await new Promise<void>((r) => this.server.listen(0, '127.0.0.1', r));
     this.url = `http://127.0.0.1:${(this.server.address() as AddressInfo).port}`;
+  }
+
+  /** Acts out aba-publish / aba-rollback against the stand-in droplet folder. */
+  private release(input: string): void {
+    if (!['release', 'verifyfail'].includes(this.script)) return;
+    const pub = /aba-publish skill\. Workspace: \/workspaces\/([a-z0-9-]+)\. Slug: ([a-z0-9-]+)\./.exec(input);
+    const back = /aba-rollback skill\. Slug: ([a-z0-9-]+)\./.exec(input);
+    if (pub && this.script === 'verifyfail') {
+      this.output = 'I did not publish it: aba-verify reported FAIL - console: "Uncaught Error: x", source: app.js (20).';
+      return;
+    }
+    if (pub) {
+      const [, folder, slug] = pub;
+      const html = readFileSync(path.join(this.workspaces, folder, 'index.html'), 'utf8');
+      const list = [...(this.releases.get(slug) ?? []), html].slice(-3); // keep three, like the skill
+      this.releases.set(slug, list);
+      this.serve(slug, html);
+      this.output = `The project has been published to http://droplet/${slug}/.`;
+    } else if (back) {
+      const slug = back[1];
+      const list = this.releases.get(slug) ?? [];
+      if (list.length < 2) {
+        this.output = 'There is no previous release to roll back to.';
+        return;
+      }
+      this.serve(slug, list[list.length - 2]);
+      this.output = `Rolled back: the previous version is live at http://droplet/${slug}/.`;
+    }
+  }
+
+  private serve(slug: string, html: string): void {
+    mkdirSync(path.join(this.droplet, slug), { recursive: true });
+    writeFileSync(path.join(this.droplet, slug, 'index.html'), html);
   }
 
   async stop(): Promise<void> {

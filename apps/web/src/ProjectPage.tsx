@@ -3,6 +3,7 @@ import {
   api,
   ApiError,
   PREVIEW_ORIGIN,
+  PUBLISH_BASE,
   type Project,
   type RunEvent,
   type RunStatus,
@@ -13,6 +14,7 @@ import { formatDate } from './format'
 import { ArrowLeft, ArrowRight, ArrowUpRight, Pencil } from './icons'
 import { EditPopover, type Selection } from './EditPopover'
 import { HistoryPanel } from './HistoryPanel'
+import { PublishPanel } from './PublishPanel'
 import { ActionButtons, DeleteDialog, RenameForm } from './ProjectActions'
 import { TopBar } from './TopBar'
 
@@ -49,6 +51,8 @@ function describe(e: RunEvent): Omit<Step, 'key'> | null {
       return { kind: 'info', text: e.text ?? 'Denied a request for extra permissions.' }
     case 'version.created':
       return { kind: 'info', text: e.text ?? 'Saved a new version.' }
+    case 'published':
+      return { kind: 'info', text: `Live at ${e.text}` }
     default:
       return null
   }
@@ -87,8 +91,8 @@ export function ProjectPage({ user, project, onLogout, onBack, onRenamed }: Prop
       .finally(() => setLoaded(true))
   }, [project.id, version?.commitSha])
 
-  /** Follows a run (a build or a prompt edit) and shows its progress. */
-  function follow(runId: string) {
+  /** Follows a run (a build, a prompt edit, a publish or a roll back) and shows its progress. */
+  function follow(runId: string, onFinished?: () => void) {
     setRunning(true)
     let n = 0
     stop.current = api.followRun(
@@ -105,10 +109,25 @@ export function ProjectPage({ user, project, onLogout, onBack, onRenamed }: Prop
         }
         const step = describe(ev)
         if (step) setSteps((s) => [...s, { ...step, key: n++ }])
-        if (ev.type === 'run.status' && ev.status && FINAL.includes(ev.status)) setRunning(false)
+        if (ev.type === 'run.status' && ev.status && FINAL.includes(ev.status)) {
+          setRunning(false)
+          onFinished?.()
+        }
       },
       () => setRunning(false),
     )
+  }
+
+  /** Publish / roll back: Hermes runs the aba-publish or aba-rollback skill; then reload the project. */
+  async function release(start: () => Promise<{ runId: string }>) {
+    resetProgress()
+    try {
+      follow((await start()).runId, () => {
+        api.project(project.id).then(onRenamed).catch(() => undefined)
+      })
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not reach the server.')
+    }
   }
 
   function resetProgress() {
@@ -274,6 +293,15 @@ export function ProjectPage({ user, project, onLogout, onBack, onRenamed }: Prop
                 </p>
               )}
             </section>
+
+            <PublishPanel
+              project={project}
+              hasVersion={history.length > 0}
+              disabled={running || editBusy}
+              publishBase={PUBLISH_BASE}
+              onPublish={(slug) => void release(() => api.publish(project.id, slug))}
+              onRollback={() => void release(() => api.rollback(project.id))}
+            />
 
             <HistoryPanel
               projectId={project.id}
