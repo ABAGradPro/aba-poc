@@ -43,6 +43,7 @@ export default function App() {
         project={project}
         onLogout={logout}
         onBack={() => setView('dashboard')}
+        onRenamed={setProject}
       />
     )
   if (view === 'dashboard' && user)

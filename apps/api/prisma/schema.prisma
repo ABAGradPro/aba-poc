@@ -18,6 +18,8 @@ model User {
 model Project {
   id        String    @id @default(uuid()) @db.Uuid
   name      String
+  /// Folder under WORKSPACES_DIR: the name made safe plus the first 8 characters of the id.
+  folder    String    @unique
   ownerId   String    @db.Uuid
   owner     User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   createdAt DateTime  @default(now())

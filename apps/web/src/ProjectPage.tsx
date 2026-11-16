@@ -11,6 +11,7 @@ import {
 } from './api'
 import { formatDate } from './format'
 import { ArrowLeft, ArrowRight, ArrowUpRight } from './icons'
+import { ActionButtons, DeleteDialog, RenameForm } from './ProjectActions'
 import { TopBar } from './TopBar'
 
 interface Props {
@@ -18,6 +19,7 @@ interface Props {
   project: Project
   onLogout: () => void
   onBack: () => void
+  onRenamed: (project: Project) => void
 }
 
 interface Step {
@@ -50,7 +52,7 @@ function describe(e: RunEvent): Omit<Step, 'key'> | null {
   }
 }
 
-export function ProjectPage({ user, project, onLogout, onBack }: Props) {
+export function ProjectPage({ user, project, onLogout, onBack, onRenamed }: Props) {
   const [prompt, setPrompt] = useState('')
   const [steps, setSteps] = useState<Step[]>([])
   const [message, setMessage] = useState('')
@@ -58,6 +60,8 @@ export function ProjectPage({ user, project, onLogout, onBack }: Props) {
   const [error, setError] = useState('')
   const [version, setVersion] = useState<Version | null>(null)
   const [loaded, setLoaded] = useState(false)
+  const [renaming, setRenaming] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const stop = useRef<() => void>(() => undefined)
   const id = useId()
 
@@ -116,7 +120,23 @@ export function ProjectPage({ user, project, onLogout, onBack }: Props) {
             <ArrowLeft size={16} />
             All projects
           </button>
-          <h1 className="display">{project.name}</h1>
+          {renaming ? (
+            <RenameForm
+              project={project}
+              onCancel={() => setRenaming(false)}
+              onDone={(p) => {
+                onRenamed(p)
+                setRenaming(false)
+              }}
+            />
+          ) : (
+            <div className="title-row">
+              <h1 className="display">{project.name}</h1>
+              {!running && (
+                <ActionButtons name={project.name} onRename={() => setRenaming(true)} onDelete={() => setDeleting(true)} />
+              )}
+            </div>
+          )}
           <p className="lead">Created {formatDate(project.createdAt)}</p>
         </div>
 
@@ -212,6 +232,7 @@ export function ProjectPage({ user, project, onLogout, onBack }: Props) {
           </section>
         </div>
       </main>
+      {deleting && <DeleteDialog project={project} onClose={() => setDeleting(false)} onDeleted={onBack} />}
     </div>
   )
 }

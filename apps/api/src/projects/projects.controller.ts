@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Req } from '@nestjs/common';
 import type { Project } from '../generated/prisma/client.js';
 import type { AuthedRequest } from '../auth/auth.guard.js';
 import { CreateProjectDto } from './project.dto.js';
@@ -21,5 +21,22 @@ export class ProjectsController {
   @Get(':id')
   get(@Req() req: AuthedRequest, @Param('id') id: string): Promise<Project> {
     return this.projects.getOwned(req.user!.id, id);
+  }
+
+  /** Rename: the project's name and its folder. */
+  @Patch(':id')
+  rename(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Body() body: CreateProjectDto,
+  ): Promise<Project> {
+    return this.projects.rename(req.user!.id, id, body.name);
+  }
+
+  /** Delete: database rows go, the folder moves to ~/aba-data/trash. */
+  @Delete(':id')
+  @HttpCode(204)
+  remove(@Req() req: AuthedRequest, @Param('id') id: string): Promise<void> {
+    return this.projects.remove(req.user!.id, id);
   }
 }

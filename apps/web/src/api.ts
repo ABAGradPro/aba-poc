@@ -6,6 +6,7 @@ export interface User {
 export interface Project {
   id: string
   name: string
+  folder: string
   createdAt: string
 }
 
@@ -79,6 +80,9 @@ export const api = {
   projects: () => call<Project[]>('/projects'),
   project: (id: string) => call<Project>(`/projects/${id}`),
   createProject: (name: string) => call<Project>('/projects', json({ name })),
+  renameProject: (id: string, name: string) =>
+    call<Project>(`/projects/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
+  deleteProject: (id: string) => call<void>(`/projects/${id}`, { method: 'DELETE' }),
   versions: (projectId: string) => call<Version[]>(`/projects/${projectId}/versions`),
   startRun: (projectId: string, prompt: string) =>
     call<{ runId: string }>(`/projects/${projectId}/runs`, json({ prompt })),

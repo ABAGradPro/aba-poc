@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useState, type FormEvent } from 'react'
 import { api, ApiError, type Project, type User } from './api'
 import { ArrowRight, ArrowUpRight, Plus, Search } from './icons'
 import { formatDate } from './format'
+import { ActionButtons, DeleteDialog, RenameForm } from './ProjectActions'
 import { TopBar } from './TopBar'
 
 interface Props {
@@ -16,6 +17,8 @@ export function Dashboard({ user, onLogout, onOpen }: Props) {
   const [query, setQuery] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [renaming, setRenaming] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState<Project | null>(null)
   const id = useId()
 
   useEffect(() => {
@@ -109,25 +112,51 @@ export function Dashboard({ user, onLogout, onOpen }: Props) {
           ) : (
             <ul className="card-grid">
               {shown.map((p) => (
-                <li key={p.id}>
-                  <button type="button" className="project-card" onClick={() => onOpen(p)}>
-                    <span className="card-top">
-                      <span className="initial" aria-hidden="true">
-                        {p.name.charAt(0).toUpperCase()}
-                      </span>
-                      <ArrowUpRight size={18} className="card-arrow" />
-                    </span>
-                    <span className="card-body">
-                      <span className="card-name">{p.name}</span>
-                      <span className="card-meta">Created {formatDate(p.createdAt)}</span>
-                    </span>
-                  </button>
+                <li key={p.id} className="card-cell">
+                  {renaming === p.id ? (
+                    <div className="project-card editing">
+                      <RenameForm
+                        project={p}
+                        onCancel={() => setRenaming(null)}
+                        onDone={(updated) => {
+                          setProjects((all) => all?.map((x) => (x.id === updated.id ? updated : x)) ?? null)
+                          setRenaming(null)
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      <button type="button" className="project-card" onClick={() => onOpen(p)}>
+                        <span className="card-top">
+                          <span className="initial" aria-hidden="true">
+                            {p.name.charAt(0).toUpperCase()}
+                          </span>
+                          <ArrowUpRight size={18} className="card-arrow" />
+                        </span>
+                        <span className="card-body">
+                          <span className="card-name">{p.name}</span>
+                          <span className="card-meta">Created {formatDate(p.createdAt)}</span>
+                        </span>
+                      </button>
+                      <ActionButtons name={p.name} onRename={() => setRenaming(p.id)} onDelete={() => setDeleting(p)} />
+                    </>
+                  )}
                 </li>
               ))}
             </ul>
           )}
         </section>
       </main>
+      {deleting && (
+        <DeleteDialog
+          project={deleting}
+          onClose={() => setDeleting(null)}
+          onDeleted={() => {
+            setProjects((all) => all?.filter((x) => x.id !== deleting.id) ?? null)
+            setDeleting(null)
+          }}
+        />
+      )}
     </div>
   )
 }
