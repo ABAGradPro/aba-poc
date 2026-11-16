@@ -34,8 +34,8 @@ export const FRIENDLY = {
 };
 
 /** What Hermes is asked to do for a prompt (guide, Step 8). */
-export function generationInput(projectId: string, prompt: string): string {
-  return `Use the aba-generate-spa skill.\nWorkspace: ${hermesPath(projectId)}\nRequest: ${prompt}`;
+export function generationInput(folder: string, prompt: string): string {
+  return `Use the aba-generate-spa skill.\nWorkspace: ${hermesPath(folder)}\nRequest: ${prompt}`;
 }
 
 interface LiveRun {
@@ -90,7 +90,7 @@ export class RunsService implements OnModuleInit {
       const live: LiveRun = { projectId: project.id, events: new ReplaySubject<RunEvent>(500) };
       this.live.set(run.id, live);
       this.emit(live, { type: 'run.status', status: 'queued', text: 'Waiting for the AI builder…' });
-      void this.follow(run.id, project.id, prompt, live);
+      void this.follow(run.id, project.id, project.folder, prompt, live);
       return { runId: run.id };
     } finally {
       this.starting.delete(project.id);
@@ -131,12 +131,12 @@ export class RunsService implements OnModuleInit {
     }
   }
 
-  private async follow(runId: string, projectId: string, prompt: string, live: LiveRun) {
+  private async follow(runId: string, projectId: string, folder: string, prompt: string, live: LiveRun) {
     let hermesRunId: string;
     try {
       hermesRunId = await this.hermes.startRun(
-        generationInput(projectId, prompt),
-        `Work only inside ${hermesPath(projectId)}.`,
+        generationInput(folder, prompt),
+        `Work only inside ${hermesPath(folder)}.`,
         projectId,
       );
     } catch (err) {
@@ -175,7 +175,7 @@ export class RunsService implements OnModuleInit {
     }
 
     if (timedOut) await this.setStatus(runId, live, 'timeout', FRIENDLY.timeout);
-    else if (final === 'completed') await this.finishGeneration(runId, projectId, prompt, live, finalText);
+    else if (final === 'completed') await this.finishGeneration(runId, projectId, folder, prompt, live, finalText);
     else if (final) await this.setStatus(runId, live, final, finalText);
     else await this.setStatus(runId, live, 'failed', FRIENDLY.failed);
   }
@@ -184,12 +184,13 @@ export class RunsService implements OnModuleInit {
   private async finishGeneration(
     runId: string,
     projectId: string,
+    folder: string,
     prompt: string,
     live: LiveRun,
     finalText?: string,
   ) {
     try {
-      const version = await this.versions.saveGeneration(projectId, prompt);
+      const version = await this.versions.saveGeneration(projectId, folder, prompt);
       if (!version) {
         await this.setStatus(runId, live, 'failed', FRIENDLY.noPage);
         return;

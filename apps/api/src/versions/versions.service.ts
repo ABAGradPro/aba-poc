@@ -40,8 +40,8 @@ export class VersionsService {
    * commit "generate: <prompt>" and save a Version row.
    * Returns null when there is no index.html (nothing to save).
    */
-  async saveGeneration(projectId: string, prompt: string): Promise<VersionInfo | null> {
-    const dir = hostPath(projectId);
+  async saveGeneration(projectId: string, folder: string, prompt: string): Promise<VersionInfo | null> {
+    const dir = hostPath(folder);
     const index = path.join(dir, 'index.html');
     if (!(await this.exists(index))) return null;
 

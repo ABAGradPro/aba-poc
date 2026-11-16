@@ -37,7 +37,7 @@ describe('Generation, versions and preview (e2e)', () => {
       .split('\n')
       .filter((l) => l.startsWith('data:'))
       .map((l) => JSON.parse(l.slice(5)));
-    return { project: project as { id: string }, events };
+    return { project: project as { id: string; folder: string }, events };
   }
 
   beforeAll(async () => {
@@ -74,7 +74,7 @@ describe('Generation, versions and preview (e2e)', () => {
     const { project } = await generate('A bakery page');
     const call = hermes.calls.find((c) => c.path === '/v1/runs' && c.body.session_id === project.id)!;
     expect(call.body.input).toBe(
-      `Use the aba-generate-spa skill.\nWorkspace: /workspaces/${project.id}\nRequest: A bakery page`,
+      `Use the aba-generate-spa skill.\nWorkspace: /workspaces/${project.folder}\nRequest: A bakery page`,
     );
   });
 
@@ -85,7 +85,7 @@ describe('Generation, versions and preview (e2e)', () => {
     expect(created.version).toMatchObject({ number: 1, kind: 'generate', summary: 'generate: A bakery page' });
     expect(events.at(-1)).toMatchObject({ status: 'completed' });
 
-    const dir = path.join(ws, project.id);
+    const dir = path.join(ws, project.folder);
     const $ = cheerio.load(readFileSync(path.join(dir, 'index.html'), 'utf8'));
     expect($('body *').filter((_, el) => !$(el).attr('data-aba-id')).length).toBe(0);
     expect($('link[rel="stylesheet"]').last().attr('href')).toBe('aba-overrides.css');

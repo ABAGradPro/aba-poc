@@ -40,7 +40,7 @@ describe('Projects and runs (e2e)', () => {
   async function createProject(cookie: string, name = 'Coffee shop') {
     const res = await fetch(`${base}/api/projects`, post({ name }, cookie));
     expect(res.status).toBe(201);
-    return (await res.json()) as { id: string; name: string };
+    return (await res.json()) as { id: string; name: string; folder: string };
   }
   /** Reads the browser-facing SSE stream until the run reaches a final status. */
   async function collect(cookie: string, runId: string) {
@@ -81,7 +81,7 @@ describe('Projects and runs (e2e)', () => {
   it('creates a project folder with a git repo whose first commit is "init"', async () => {
     const cookie = owner;
     const project = await createProject(cookie);
-    const dir = path.join(ws, project.id);
+    const dir = path.join(ws, project.folder);
     expect(existsSync(dir)).toBe(true);
     const log = execFileSync('git', ['-C', dir, 'log', '--oneline'], { encoding: 'utf8' });
     expect(log.trim()).toMatch(/^[0-9a-f]+ init$/);
@@ -117,9 +117,9 @@ describe('Projects and runs (e2e)', () => {
 
     const started = hermes.calls.find((c) => c.path === '/v1/runs' && c.body.session_id === project.id)!;
     expect(started.body.input).toBe(
-      `Use the aba-generate-spa skill.\nWorkspace: /workspaces/${project.id}\nRequest: A bakery page`,
+      `Use the aba-generate-spa skill.\nWorkspace: /workspaces/${project.folder}\nRequest: A bakery page`,
     );
-    expect(started.body.instructions).toBe(`Work only inside /workspaces/${project.id}.`);
+    expect(started.body.instructions).toBe(`Work only inside /workspaces/${project.folder}.`);
     const row = await prisma.run.findUnique({ where: { id: runId } });
     expect(row).toMatchObject({ status: 'completed', prompt: 'A bakery page' });
     expect(row!.hermesRunId).toMatch(/^run_/);

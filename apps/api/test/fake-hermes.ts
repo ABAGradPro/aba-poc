@@ -32,8 +32,10 @@ export class FakeHermes {
           return;
         }
         if (req.method === 'POST' && req.url === '/v1/runs') {
-          if (this.workspaces && this.script !== 'nopage' && body?.session_id) {
-            const dir = path.join(this.workspaces, String(body.session_id));
+          // Like Hermes, write into the folder named in the prompt ("Workspace: /workspaces/<folder>").
+          const folder = /Workspace: \/workspaces\/([a-z0-9-]+)/.exec(String(body?.input ?? ''))?.[1];
+          if (this.workspaces && this.script !== 'nopage' && folder) {
+            const dir = path.join(this.workspaces, folder);
             mkdirSync(dir, { recursive: true });
             writeFileSync(path.join(dir, 'index.html'), FAKE_PAGE);
             writeFileSync(path.join(dir, 'styles.css'), 'body{font-family:sans-serif}');

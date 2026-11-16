@@ -4,6 +4,7 @@ import { readFile, stat } from 'node:fs/promises';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
+import { PrismaService } from '../prisma/prisma.service.js';
 import { hostPath, isUuid } from '../projects/workspace.js';
 
 export const EDIT_MODE_TAG = '<script src="/__aba/edit-mode.js" defer></script>';
@@ -22,7 +23,7 @@ export function injectEditMode(html: string): string {
 /**
  * The preview server (guide, Step 8): a second small app on 127.0.0.1:4000.
  * It is a different origin from the GUI (5173), so generated code can never
- * reach the user's session. It serves /p/<projectId>/ from the workspace and
+ * reach the user's session. It serves /p/<projectId>/ from that project's folder and
  * never serves dotfiles such as .git.
  */
 @Injectable()
@@ -30,6 +31,8 @@ export class PreviewServer implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PreviewServer.name);
   private server?: Server;
   url = '';
+
+  constructor(private readonly prisma: PrismaService) {}
 
   onModuleInit(): Promise<void> {
     const port = Number(process.env.PREVIEW_PORT ?? 4000);
@@ -84,7 +87,10 @@ export class PreviewServer implements OnModuleInit, OnModuleDestroy {
       return notFound();
     }
 
-    const root = hostPath(m[1]);
+    // The address uses the id (it never changes); the folder follows the project's name.
+    const project = await this.prisma.project.findUnique({ where: { id: m[1] }, select: { folder: true } });
+    if (!project) return notFound();
+    const root = hostPath(project.folder);
     let file = path.join(root, ...segments);
     if (file !== root && !file.startsWith(root + path.sep)) return notFound();
     try {

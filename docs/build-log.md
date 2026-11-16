@@ -19,6 +19,7 @@ One entry per step: date, who, what was done, and whether its check passed.
 - Step 6 — Accounts: Prisma 7.10.1 + PostgreSQL (User, Project, Version, Run), Argon2id password hashes, httpOnly SameSite=Lax JWT cookie, guard on every route, 5 logins/minute (6th = 429); login, register and dashboard pages; unit + e2e tests pass; checked in the browser (2026-11-10).
 - Step 7 — Projects as git folders (first commit "init"), owner-only (404 for others), Hermes Runs API bridge: POST /api/projects/:id/runs answers 202 in 0.03 s, 409 when busy, live SSE progress, approvals denied, 10-minute limit, friendly failure when Hermes is down; project list and live progress page; unit + e2e tests (fake Hermes) pass; real run checked in the browser (2026-11-10).
 - Step 8 — Prompt to app: Hermes runs aba-generate-spa; the API adds missing data-aba-id, links aba-overrides.css last, commits "generate: <prompt>" and saves a Version; sandboxed preview on 127.0.0.1:4000 (no dotfiles, edit-mode script injected); coffee shop shown as version 1; .git/config 404; window.parent.document → SecurityError (2026-11-16).
+- Extra (before Step 9) — Project folders named after the project (`coffee-shop-d5de03ae`: safe name + 8 id characters), migration `project_folder` + `pnpm --filter api folders:rename --apply` for existing folders; rename (PATCH) and delete (DELETE, folder moved to ~/aba-data/trash) in the API and on the dashboard and project page; 409 during a build, 404 for others (2026-11-16).
 
 ## NFR1 mini-benchmark (Step 8)
 
