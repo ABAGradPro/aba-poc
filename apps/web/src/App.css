@@ -782,3 +782,57 @@ button {
   font-size: 13px;
   color: var(--accent-text);
 }
+
+/* Step 9: edit mode */
+.preview-stage {
+  position: relative;
+}
+
+.preview-frame.editing {
+  outline: 2px solid var(--accent-hover);
+  outline-offset: 2px;
+}
+
+.btn-ghost.toggle.on {
+  border-color: var(--accent-hover);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.btn-ghost:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.edit-hint {
+  margin-top: -6px;
+  font-size: 13px;
+  color: var(--accent-text);
+}
+
+.edit-popover {
+  position: absolute;
+  z-index: 5;
+  width: min(320px, calc(100% - 16px));
+  padding: 14px;
+  border: 1px solid var(--card-hover-border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.edit-popover .edit-target {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.edit-popover .edit-target code {
+  color: var(--accent-text);
+}
+
+.edit-popover .textarea {
+  min-height: 72px;
+}

@@ -45,10 +45,23 @@ export class VersionsService {
     const index = path.join(dir, 'index.html');
     if (!(await this.exists(index))) return null;
 
-    const before = await readFile(index, 'utf8');
-    const { html, addedIds } = tidyHtml(before);
-    if (html !== before) await writeFile(index, html);
-    if (addedIds) this.logger.log(`Project ${projectId}: added ${addedIds} missing data-aba-id(s)`);
+    const summary = `generate: ${short(prompt.trim().replace(/\s+/g, ' '))}`;
+    return this.commitChange(projectId, folder, 'generate', summary);
+  }
+
+  /**
+   * The same final step for every change (build, prompt edit, move, offset): tidy index.html
+   * (ids, overrides linked last), make sure aba-overrides.css exists, commit and save a Version.
+   */
+  async commitChange(projectId: string, folder: string, kind: string, summary: string): Promise<VersionInfo> {
+    const dir = hostPath(folder);
+    const index = path.join(dir, 'index.html');
+    if (await this.exists(index)) {
+      const before = await readFile(index, 'utf8');
+      const { html, addedIds } = tidyHtml(before);
+      if (html !== before) await writeFile(index, html);
+      if (addedIds) this.logger.log(`Project ${projectId}: added ${addedIds} missing data-aba-id(s)`);
+    }
 
     const overrides = path.join(dir, OVERRIDES);
     if (!(await this.exists(overrides))) {
@@ -57,12 +70,11 @@ export class VersionsService {
 
     const git = simpleGit(dir);
     await git.add(['-A']);
-    const summary = `generate: ${short(prompt.trim().replace(/\s+/g, ' '))}`;
     await git.commit(summary, [], { '--allow-empty': null });
     const commitSha = (await git.revparse(['HEAD'])).trim();
 
     const version = await this.prisma.version.create({
-      data: { projectId, commitSha, kind: 'generate', summary },
+      data: { projectId, commitSha, kind, summary },
     });
     return this.withNumber(version);
   }

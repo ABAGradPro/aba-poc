@@ -1,0 +1,18 @@
+{
+  "name": "@aba/edit-mode",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Click-to-edit and drag-and-drop script injected into ABA previews (Step 9).",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --format=iife --target=es2020 --minify --legal-comments=none --outfile=dist/edit-mode.js",
+    "lint": "oxlint src"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "oxlint": "^1.93.0"
+  }
+}

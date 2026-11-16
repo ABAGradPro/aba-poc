@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 
-export type Script = 'complete' | 'approval' | 'slow' | 'hang' | 'nopage';
+export type Script = 'complete' | 'approval' | 'slow' | 'hang' | 'nopage' | 'edit';
 
 /** The page the fake Hermes "builds": the <p> and <script> have no data-aba-id on purpose. */
 export const FAKE_PAGE =
@@ -19,6 +19,8 @@ export class FakeHermes {
   url = '';
   /** Where projects live, so a run can write files like the real Hermes does. */
   workspaces = '';
+  /** What the fake answers for script 'edit' (the aba-edit-element JSON). */
+  editReply = '';
 
   async start(): Promise<void> {
     this.server = createServer((req, res) => {
@@ -34,7 +36,7 @@ export class FakeHermes {
         if (req.method === 'POST' && req.url === '/v1/runs') {
           // Like Hermes, write into the folder named in the prompt ("Workspace: /workspaces/<folder>").
           const folder = /Workspace: \/workspaces\/([a-z0-9-]+)/.exec(String(body?.input ?? ''))?.[1];
-          if (this.workspaces && this.script !== 'nopage' && folder) {
+          if (this.workspaces && !['nopage', 'edit'].includes(this.script) && folder) {
             const dir = path.join(this.workspaces, folder);
             mkdirSync(dir, { recursive: true });
             writeFileSync(path.join(dir, 'index.html'), FAKE_PAGE);
@@ -54,7 +56,7 @@ export class FakeHermes {
           if (this.script === 'hang') return; // never finishes
           const finish = () => {
             send({ event: 'tool.completed', tool: 'write_file' });
-            send({ event: 'run.completed', output: 'Built it.' });
+            send({ event: 'run.completed', output: this.script === 'edit' ? this.editReply : 'Built it.' });
             res.end();
           };
           if (this.script === 'slow') setTimeout(finish, 1500);

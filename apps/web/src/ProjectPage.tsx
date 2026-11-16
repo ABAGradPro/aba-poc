@@ -10,7 +10,8 @@ import {
   type Version,
 } from './api'
 import { formatDate } from './format'
-import { ArrowLeft, ArrowRight, ArrowUpRight } from './icons'
+import { ArrowLeft, ArrowRight, ArrowUpRight, Pencil } from './icons'
+import { EditPopover, type Selection } from './EditPopover'
 import { ActionButtons, DeleteDialog, RenameForm } from './ProjectActions'
 import { TopBar } from './TopBar'
 
@@ -62,6 +63,10 @@ export function ProjectPage({ user, project, onLogout, onBack, onRenamed }: Prop
   const [loaded, setLoaded] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [editOn, setEditOn] = useState(false)
+  const [selected, setSelected] = useState<Selection | null>(null)
+  const [editBusy, setEditBusy] = useState(false)
+  const frame = useRef<HTMLIFrameElement>(null)
   const stop = useRef<() => void>(() => undefined)
   const id = useId()
 
@@ -76,37 +81,112 @@ export function ProjectPage({ user, project, onLogout, onBack, onRenamed }: Prop
       .finally(() => setLoaded(true))
   }, [project.id])
 
-  async function start(e: FormEvent) {
-    e.preventDefault()
+  /** Follows a run (a build or a prompt edit) and shows its progress. */
+  function follow(runId: string) {
+    setRunning(true)
+    let n = 0
+    stop.current = api.followRun(
+      runId,
+      (ev) => {
+        if (ev.type === 'message.delta' && ev.text) {
+          setMessage((m) => m + ev.text)
+          return
+        }
+        if (ev.type === 'version.created' && ev.version) setVersion(ev.version)
+        // If no text was streamed, use the final summary as the reply.
+        if (ev.type === 'run.status' && ev.status === 'completed' && ev.text) {
+          setMessage((m) => m || ev.text!)
+        }
+        const step = describe(ev)
+        if (step) setSteps((s) => [...s, { ...step, key: n++ }])
+        if (ev.type === 'run.status' && ev.status && FINAL.includes(ev.status)) setRunning(false)
+      },
+      () => setRunning(false),
+    )
+  }
+
+  function resetProgress() {
     setError('')
     setSteps([])
     setMessage('')
+  }
+
+  async function start(e: FormEvent) {
+    e.preventDefault()
+    resetProgress()
     try {
-      const { runId } = await api.startRun(project.id, prompt)
-      setRunning(true)
-      let n = 0
-      stop.current = api.followRun(
-        runId,
-        (ev) => {
-          if (ev.type === 'message.delta' && ev.text) {
-            setMessage((m) => m + ev.text)
-            return
-          }
-          if (ev.type === 'version.created' && ev.version) setVersion(ev.version)
-          // If no text was streamed, use the final summary as the reply.
-          if (ev.type === 'run.status' && ev.status === 'completed' && ev.text) {
-            setMessage((m) => m || ev.text!)
-          }
-          const step = describe(ev)
-          if (step) setSteps((s) => [...s, { ...step, key: n++ }])
-          if (ev.type === 'run.status' && ev.status && FINAL.includes(ev.status)) setRunning(false)
-        },
-        () => setRunning(false),
-      )
+      follow((await api.startRun(project.id, prompt)).runId)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not reach the server.')
     }
   }
+
+  /** Click-to-edit: change the selected element by prompt (Hermes, aba-edit-element). */
+  async function applyEdit(request: string) {
+    if (!selected) return
+    resetProgress()
+    try {
+      follow((await api.editElement(project.id, selected.id, request)).runId)
+      setSelected(null)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not reach the server.')
+    }
+  }
+
+  /** Drag and Alt-drag: instant changes with no AI; the preview reloads with the new version. */
+  async function quickEdit(label: string, change: () => Promise<Version>) {
+    setEditBusy(true)
+    setError('')
+    try {
+      const v = await change()
+      setVersion(v)
+      setSteps((s) => [...s, { key: Date.now(), kind: 'info', text: `${label} Saved as version ${v.number}.` }])
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not reach the server.')
+    } finally {
+      setEditBusy(false)
+    }
+  }
+
+  // Messages from edit mode inside the preview. Only accept them from that exact iframe and origin.
+  useEffect(() => {
+    const previewOrigin = new URL(PREVIEW_ORIGIN).origin
+    function onMessage(e: MessageEvent) {
+      if (e.origin !== previewOrigin || e.source !== frame.current?.contentWindow) return
+      const d = e.data as Record<string, unknown> | null
+      if (!d || typeof d.type !== 'string') return
+      if (d.type === 'aba:ready') sendEdit()
+      if (d.type === 'aba:select') {
+        setSelected(typeof d.id === 'string' ? { id: d.id, label: String(d.label ?? ''), rect: d.rect as Selection['rect'] } : null)
+      }
+      if (d.type === 'aba:move' && typeof d.id === 'string') {
+        const elementId = d.id
+        void quickEdit(`Moved “${elementId}”.`, () =>
+          api.moveElement(project.id, elementId, (d.parentId as string | null) ?? null, (d.beforeId as string | null) ?? null),
+        )
+      }
+      if (d.type === 'aba:offset' && typeof d.id === 'string') {
+        const elementId = d.id
+        void quickEdit(`Nudged “${elementId}”.`, () =>
+          api.offsetElement(project.id, elementId, Number(d.dx), Number(d.dy)),
+        )
+      }
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  })
+
+  const editActive = editOn && !running && !editBusy
+  function sendEdit() {
+    frame.current?.contentWindow?.postMessage({ type: 'aba:edit', on: editActive }, new URL(PREVIEW_ORIGIN).origin)
+  }
+  useEffect(() => {
+    sendEdit()
+    if (!editActive) setSelected(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editActive])
+  // A new version reloads the preview, so the old selection is gone.
+  useEffect(() => setSelected(null), [version?.commitSha])
 
   // The commit id in the URL makes the iframe load the new version after each save.
   const previewUrl = version ? `${PREVIEW_ORIGIN}/p/${project.id}/?v=${version.commitSha.slice(0, 12)}` : ''
@@ -204,20 +284,56 @@ export function ProjectPage({ user, project, onLogout, onBack, onRenamed }: Prop
                 )}
               </div>
               {version && (
-                <a className="btn-ghost small" href={previewUrl} target="_blank" rel="noopener noreferrer">
-                  Open in new tab
-                  <ArrowUpRight size={14} />
-                </a>
+                <div className="row-8">
+                  <button
+                    type="button"
+                    className={`btn-ghost small toggle${editOn ? ' on' : ''}`}
+                    aria-pressed={editOn}
+                    onClick={() => setEditOn((v) => !v)}
+                    disabled={running}
+                  >
+                    <Pencil size={14} />
+                    {editOn ? 'Editing' : 'Edit'}
+                  </button>
+                  <a className="btn-ghost small" href={previewUrl} target="_blank" rel="noopener noreferrer">
+                    Open in new tab
+                    <ArrowUpRight size={14} />
+                  </a>
+                </div>
               )}
             </div>
+            {version && editOn && (
+              <p className="edit-hint" role="status">
+                {running
+                  ? 'Edit mode pauses while the AI builder is working.'
+                  : editBusy
+                    ? 'Saving your change…'
+                    : 'Click an element to change it by prompt · Drag a selected element to move it · Alt-drag to nudge it · Esc to cancel'}
+              </p>
+            )}
             {version ? (
-              <iframe
-                key={version.commitSha}
-                className="preview-frame"
-                title={`Preview of ${project.name}, version ${version.number}`}
-                src={previewUrl}
-                sandbox="allow-scripts allow-same-origin allow-forms"
-              />
+              <div className="preview-stage">
+                <iframe
+                  ref={frame}
+                  key={version.commitSha}
+                  className={`preview-frame${editOn ? ' editing' : ''}`}
+                  title={`Preview of ${project.name}, version ${version.number}`}
+                  src={previewUrl}
+                  sandbox="allow-scripts allow-same-origin allow-forms"
+                  onLoad={sendEdit}
+                />
+                {selected && editActive && (
+                  <EditPopover
+                    selection={selected}
+                    bounds={{ width: frame.current?.clientWidth ?? 600, height: frame.current?.clientHeight ?? 600 }}
+                    onApply={applyEdit}
+                    onCancel={() => {
+                      setSelected(null)
+                      frame.current?.contentWindow?.postMessage({ type: 'aba:clear' }, new URL(PREVIEW_ORIGIN).origin)
+                    }}
+                  />
+                )}
+              </div>
             ) : (
               <div className="preview-empty">
                 <p className="muted">
