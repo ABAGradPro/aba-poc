@@ -1,10 +1,11 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { ProjectsService } from '../projects/projects.service.js';
 import { hostPath } from '../projects/workspace.js';
 import { OVERRIDES } from '../versions/tidy.js';
 import { VersionsService, type VersionInfo } from '../versions/versions.service.js';
+import { isUuid } from '../projects/workspace.js';
 import { applyOffset, EditError, moveElement } from './html-edits.js';
 
 /** Drag-and-drop edits (guide, Step 9): no model call, just a precise change and a commit. */
@@ -39,6 +40,16 @@ export class EditsService {
     });
   }
 
+  /** Restore one of the newest three versions (Step 10), with the same safety as other changes. */
+  async restore(userId: string, projectId: string, versionId: string): Promise<VersionInfo> {
+    if (!isUuid(versionId)) throw new NotFoundException('Version not found');
+    const project = await this.projects.getOwned(userId, projectId);
+    return this.locked(project.id, async () => {
+      await this.projects.assertIdle(project.id, 'restored');
+      return this.versions.restore(project.id, project.folder, versionId);
+    });
+  }
+
   private async read(file: string): Promise<string> {
     const html = await readFile(file, 'utf8').catch(() => null);
     if (html === null) throw new BadRequestException('Build the app first, then edit it.');
@@ -51,24 +62,27 @@ export class EditsService {
     apply: (dir: string) => Promise<{ kind: string; summary: string }>,
   ): Promise<VersionInfo> {
     const project = await this.projects.getOwned(userId, projectId);
-    const previous = this.locks.get(project.id) ?? Promise.resolve();
-    const next = previous
-      .catch(() => undefined)
-      .then(async () => {
-        await this.projects.assertIdle(project.id, 'edited');
-        try {
-          const { kind, summary } = await apply(hostPath(project.folder));
-          return await this.versions.commitChange(project.id, project.folder, kind, summary);
-        } catch (err) {
-          if (err instanceof EditError) throw new BadRequestException(err.message);
-          throw err;
-        }
-      });
-    this.locks.set(project.id, next);
+    return this.locked(project.id, async () => {
+      await this.projects.assertIdle(project.id, 'edited');
+      try {
+        const { kind, summary } = await apply(hostPath(project.folder));
+        return await this.versions.commitChange(project.id, project.folder, kind, summary);
+      } catch (err) {
+        if (err instanceof EditError) throw new BadRequestException(err.message);
+        throw err;
+      }
+    });
+  }
+
+  /** Runs `work` after any earlier change to the same project has finished. */
+  private async locked<T>(projectId: string, work: () => Promise<T>): Promise<T> {
+    const previous = this.locks.get(projectId) ?? Promise.resolve();
+    const next = previous.catch(() => undefined).then(work);
+    this.locks.set(projectId, next);
     try {
       return await next;
     } finally {
-      if (this.locks.get(project.id) === next) this.locks.delete(project.id);
+      if (this.locks.get(projectId) === next) this.locks.delete(projectId);
     }
   }
 }

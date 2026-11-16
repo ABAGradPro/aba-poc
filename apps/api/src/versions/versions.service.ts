@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { access, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
@@ -18,6 +18,9 @@ export interface VersionInfo {
 }
 
 const short = (s: string, max = 72) => (s.length > max ? s.slice(0, max - 1) + '…' : s);
+
+/** How many Version rows each project keeps (guide, Step 10). Git keeps every commit. */
+export const KEEP_VERSIONS = 3;
 
 @Injectable()
 export class VersionsService {
@@ -73,32 +76,58 @@ export class VersionsService {
     await git.commit(summary, [], { '--allow-empty': null });
     const commitSha = (await git.revparse(['HEAD'])).trim();
 
-    const version = await this.prisma.version.create({
-      data: { projectId, commitSha, kind, summary },
+    // Next number, save the row, then trim this project's rows to the newest three.
+    const version = await this.prisma.$transaction(async (tx) => {
+      const last = await tx.version.findFirst({ where: { projectId }, orderBy: { number: 'desc' } });
+      const created = await tx.version.create({
+        data: { projectId, commitSha, kind, summary, number: (last?.number ?? 0) + 1 },
+      });
+      const keep = await tx.version.findMany({
+        where: { projectId },
+        orderBy: { number: 'desc' },
+        take: KEEP_VERSIONS,
+        select: { id: true },
+      });
+      await tx.version.deleteMany({ where: { projectId, id: { notIn: keep.map((k) => k.id) } } });
+      return created;
     });
-    return this.withNumber(version);
+    return this.pick(version);
   }
 
-  /** The owner's versions, newest first. */
+  /**
+   * Go back to one of the newest three versions (guide, Step 10): restore every file from
+   * that commit, then commit "restore: <sha>" as a new version, so the restore can be undone too.
+   * The caller checks ownership and that no build is running.
+   */
+  async restore(projectId: string, folder: string, versionId: string): Promise<VersionInfo> {
+    const shown = await this.prisma.version.findMany({
+      where: { projectId },
+      orderBy: { number: 'desc' },
+      take: KEEP_VERSIONS,
+    });
+    const target = shown.find((v) => v.id === versionId);
+    if (!target) throw new NotFoundException('That version is not one of the last three.');
+    const git = simpleGit(hostPath(folder));
+    await git.raw(['restore', `--source=${target.commitSha}`, '--staged', '--worktree', '--', '.']);
+    const sha = target.commitSha.slice(0, 7);
+    return this.commitChange(projectId, folder, 'restore', `restore: ${sha} (version ${target.number})`);
+  }
+
+  /** The owner's newest three versions, newest first. */
   async list(userId: string, projectId: string): Promise<VersionInfo[]> {
     const project = await this.projects.getOwned(userId, projectId);
     const rows = await this.prisma.version.findMany({
       where: { projectId: project.id },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { number: 'desc' },
+      take: KEEP_VERSIONS,
     });
-    return rows.map((v, i) => ({ ...this.pick(v), number: i + 1 })).reverse();
+    return rows.map((v) => this.pick(v));
   }
 
-  private async withNumber(v: Version): Promise<VersionInfo> {
-    const number = await this.prisma.version.count({
-      where: { projectId: v.projectId, createdAt: { lte: v.createdAt } },
-    });
-    return { ...this.pick(v), number };
-  }
-
-  private pick(v: Version): Omit<VersionInfo, 'number'> {
+  private pick(v: Version): VersionInfo {
     return {
       id: v.id,
+      number: v.number,
       kind: v.kind,
       summary: v.summary,
       commitSha: v.commitSha,

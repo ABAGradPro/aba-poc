@@ -84,6 +84,8 @@ export const api = {
     call<Project>(`/projects/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
   deleteProject: (id: string) => call<void>(`/projects/${id}`, { method: 'DELETE' }),
   versions: (projectId: string) => call<Version[]>(`/projects/${projectId}/versions`),
+  restoreVersion: (projectId: string, versionId: string) =>
+    call<Version>(`/projects/${projectId}/versions/${versionId}/restore`, { method: 'POST' }),
   editElement: (projectId: string, id: string, prompt: string) =>
     call<{ runId: string }>(`/projects/${projectId}/edits/element`, json({ id, prompt })),
   moveElement: (projectId: string, id: string, parentId: string | null, beforeId: string | null) =>
