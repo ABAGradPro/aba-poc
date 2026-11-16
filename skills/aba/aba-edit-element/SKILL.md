@@ -1,7 +1,7 @@
 ---
 name: aba-edit-element
 description: Rewrite one element of an ABA page, found by its data-aba-id, and return only JSON with the new HTML and CSS.
-version: 1.0.0
+version: 1.1.0
 author: ABA team
 metadata:
   hermes:
@@ -19,6 +19,9 @@ Inputs: the element's current HTML (one root element with a `data-aba-id`), the 
 - Keep exactly one root element, and keep its `data-aba-id` unchanged.
 - Every child element keeps its `data-aba-id`; new child elements get new unique ones (lowercase words joined by hyphens).
 - No inline styles (`style="..."`) and no inline event handlers. Put styling in the `css` field, using selectors like `[data-aba-id="the-id"]` so it only affects this element.
+- Never use `#id` selectors in the `css` field: `data-aba-id` is not an `id`.
+- Links and buttons must keep doing something: a link to a page of the site is `href="#/name"`; never `href="#"`.
+- Use only image files the page already uses (`images/...`); never link to an image on another site.
 - Keep it accessible: labels, alt text, contrast, keyboard use.
 - Do not write any files; the ABA app applies your answer.
 

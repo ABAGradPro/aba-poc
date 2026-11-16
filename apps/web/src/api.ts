@@ -23,6 +23,25 @@ export interface Version {
   createdAt: string
 }
 
+/** An image in the project's images/ folder (GET /api/projects/:id/images). */
+export interface ProjectImage {
+  file: string
+  caption: string
+  /** Fetched by the AI builder from the free photo search (not uploaded by the user). */
+  stock: boolean
+  size: number
+}
+
+/** What a visitor sent through a contact form of the preview. */
+export interface SiteMessage {
+  id: string
+  name: string
+  contact: string
+  message: string
+  fields: Record<string, string>
+  createdAt: string
+}
+
 /** The preview server: a different origin from this GUI, so generated code cannot reach the session. */
 export const PREVIEW_ORIGIN: string =
   (import.meta.env.VITE_PREVIEW_ORIGIN as string | undefined) ?? 'http://localhost:4000'
@@ -91,6 +110,20 @@ export const api = {
     call<Project>(`/projects/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
   deleteProject: (id: string) => call<void>(`/projects/${id}`, { method: 'DELETE' }),
   versions: (projectId: string) => call<Version[]>(`/projects/${projectId}/versions`),
+  images: (projectId: string) => call<ProjectImage[]>(`/projects/${projectId}/images`),
+  uploadImage: (projectId: string, file: File) =>
+    call<ProjectImage>(`/projects/${projectId}/images?name=${encodeURIComponent(file.name)}`, {
+      method: 'POST',
+      body: file,
+      headers: { 'Content-Type': 'application/octet-stream' },
+    }),
+  captionImage: (projectId: string, file: string, caption: string) =>
+    call<ProjectImage>(`/projects/${projectId}/images/${file}`, { method: 'PATCH', body: JSON.stringify({ caption }) }),
+  deleteImage: (projectId: string, file: string) =>
+    call<void>(`/projects/${projectId}/images/${file}`, { method: 'DELETE' }),
+  messages: (projectId: string) => call<SiteMessage[]>(`/projects/${projectId}/messages`),
+  deleteMessage: (projectId: string, messageId: string) =>
+    call<void>(`/projects/${projectId}/messages/${messageId}`, { method: 'DELETE' }),
   publish: (projectId: string, slug: string) =>
     call<{ runId: string }>(`/projects/${projectId}/publish`, json({ slug })),
   rollback: (projectId: string) => call<{ runId: string }>(`/projects/${projectId}/rollback`, { method: 'POST' }),

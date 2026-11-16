@@ -10,10 +10,22 @@ import { PreviewServer } from '../preview/preview.server.js';
 import { EditsController } from '../edits/edits.controller.js';
 import { EditsService } from '../edits/edits.service.js';
 import { PublishController } from '../publish/publish.controller.js';
+import { ImagesController } from '../images/images.controller.js';
+import { ImagesService } from '../images/images.service.js';
+import { MessagesController } from '../messages/messages.controller.js';
+import { MessagesService } from '../messages/messages.service.js';
 
 @Module({
-  controllers: [ProjectsController, RunsController, VersionsController, EditsController, PublishController],
-  providers: [ProjectsService, RunsService, HermesClient, VersionsService, PreviewServer, EditsService],
+  controllers: [ProjectsController, RunsController, VersionsController, EditsController,
+    PublishController,
+    ImagesController,
+    MessagesController,
+  ],
+  providers: [ProjectsService, RunsService, HermesClient, VersionsService, PreviewServer,
+    EditsService,
+    ImagesService,
+    MessagesService,
+  ],
   exports: [ProjectsService, RunsService],
 })
 export class ProjectsModule {}

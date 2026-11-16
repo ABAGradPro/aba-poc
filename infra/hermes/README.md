@@ -21,8 +21,15 @@ After changing one here, copy it to its live path and run `docker compose -f inf
    ```
    and set `terminal.cwd` to `/workspaces`:
    `docker exec -u 1000 hermes hermes config set terminal.cwd /workspaces`
+   Turn off Hermes's self-improvement, so it never rewrites the ABA skills by itself (the repo's `skills/aba` stays the only source):
+   ```bash
+   docker exec -u 1000 hermes hermes config set skills.creation_nudge_interval 0
+   docker exec -u 1000 hermes hermes config set memory.nudge_interval 0
+   docker exec -u 1000 hermes hermes config set auxiliary.background_review.enabled false
+   ```
 3. In `~/aba-data/hermes/.env`: `API_SERVER_ENABLED=true`, `API_SERVER_HOST=0.0.0.0`, and `API_SERVER_KEY=<openssl rand -hex 32>` (the wizard may already have set one).
-4. Copy the three files above to their live paths, then `docker compose -f infra/compose.yml up -d hermes`.
+4. Copy the ABA skills (everything in `skills/aba`, including `aba-verify/check.sh` and `aba-generate-spa/get_image.py`) to `~/aba-data/hermes/skills/aba/`; Hermes sees them as `/opt/data/skills/aba/`. Repeat after every change to a skill.
+5. Copy the three files above to their live paths, then `docker compose -f infra/compose.yml up -d hermes`.
 
 ## Talking to Hermes
 

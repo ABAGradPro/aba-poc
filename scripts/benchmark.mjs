@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // NFR1 mini-benchmark (guide, Step 8): 10 fixed prompts through the ABA API, each checked
-// with the aba-verify check script (headless Chromium: console errors, missing files, rules).
+// with the aba-verify check script (headless Chromium: every page opens, console errors,
+// missing files, links, buttons and the project rules).
 //
 // Needs the API (pnpm --filter api start:dev), PostgreSQL and Hermes running.
 // Usage: node scripts/benchmark.mjs [--only 1,4]   (results: docs/benchmark-results.md)
@@ -67,11 +68,12 @@ async function follow(runId) {
   return { final, version };
 }
 
-function verify(projectId) {
+/** Runs the ABA check on the project's folder (named after the project, not its id). */
+function verify(folder) {
   try {
     return execFileSync(
       'docker',
-      ['exec', '-u', '1000', 'hermes', 'sh', '/opt/data/skills/aba/aba-verify/check.sh', `/workspaces/${projectId}`],
+      ['exec', '-u', '1000', 'hermes', 'sh', '/opt/data/skills/aba/aba-verify/check.sh', `/workspaces/${folder}`, 'site'],
       { encoding: 'utf8', timeout: 90_000 },
     ).trim();
   } catch (err) {
@@ -94,7 +96,7 @@ for (const [i, [category, prompt]] of PROMPTS.entries()) {
     const project = await call('/projects', { name: `Benchmark ${n}: ${category}` });
     const { runId } = await call(`/projects/${project.id}/runs`, { prompt });
     const { final, version } = await follow(runId);
-    const check = final.status === 'completed' ? verify(project.id) : `FAIL\n- run ${final.status}: ${final.text ?? ''}`;
+    const check = final.status === 'completed' ? verify(project.folder) : `FAIL\n- run ${final.status}: ${final.text ?? ''}`;
     const pass = check.startsWith('PASS');
     row = { n, category, prompt, projectId: project.id, run: final.status, version: version?.number ?? null, pass, check, seconds: Math.round((Date.now() - t0) / 1000) };
   } catch (err) {
