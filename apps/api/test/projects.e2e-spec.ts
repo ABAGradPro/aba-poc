@@ -59,6 +59,7 @@ describe('Projects and runs (e2e)', () => {
     process.env.HERMES_URL = hermes.url;
     process.env.HERMES_API_KEY = 'test-hermes-key';
     process.env.WORKSPACES_DIR = ws;
+    hermes.workspaces = ws;
     process.env.RUN_TIMEOUT_MS = '800';
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
@@ -115,7 +116,9 @@ describe('Projects and runs (e2e)', () => {
     expect(events.at(-1)).toMatchObject({ type: 'run.status', status: 'completed', text: 'Built it.' });
 
     const started = hermes.calls.find((c) => c.path === '/v1/runs' && c.body.session_id === project.id)!;
-    expect(started.body.input).toBe('A bakery page');
+    expect(started.body.input).toBe(
+      `Use the aba-generate-spa skill.\nWorkspace: /workspaces/${project.id}\nRequest: A bakery page`,
+    );
     expect(started.body.instructions).toBe(`Work only inside /workspaces/${project.id}.`);
     const row = await prisma.run.findUnique({ where: { id: runId } });
     expect(row).toMatchObject({ status: 'completed', prompt: 'A bakery page' });
