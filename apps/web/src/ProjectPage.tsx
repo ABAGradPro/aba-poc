@@ -12,6 +12,7 @@ import {
 import { formatDate } from './format'
 import { ArrowLeft, ArrowRight, ArrowUpRight, Pencil } from './icons'
 import { EditPopover, type Selection } from './EditPopover'
+import { HistoryPanel } from './HistoryPanel'
 import { ActionButtons, DeleteDialog, RenameForm } from './ProjectActions'
 import { TopBar } from './TopBar'
 
@@ -60,6 +61,7 @@ export function ProjectPage({ user, project, onLogout, onBack, onRenamed }: Prop
   const [running, setRunning] = useState(false)
   const [error, setError] = useState('')
   const [version, setVersion] = useState<Version | null>(null)
+  const [history, setHistory] = useState<Version[]>([])
   const [loaded, setLoaded] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -72,14 +74,18 @@ export function ProjectPage({ user, project, onLogout, onBack, onRenamed }: Prop
 
   useEffect(() => () => stop.current(), [])
 
-  // Show the newest saved version when the page opens.
+  // Show the newest saved version when the page opens, and keep the History list in step
+  // with every new version (builds, prompt edits, drags and restores all create one).
   useEffect(() => {
     api
       .versions(project.id)
-      .then((list) => setVersion(list[0] ?? null))
-      .catch(() => setVersion(null))
+      .then((list) => {
+        setHistory(list)
+        setVersion((v) => (v && list[0] && v.commitSha === list[0].commitSha ? v : (list[0] ?? null)))
+      })
+      .catch(() => setHistory([]))
       .finally(() => setLoaded(true))
-  }, [project.id])
+  }, [project.id, version?.commitSha])
 
   /** Follows a run (a build or a prompt edit) and shows its progress. */
   function follow(runId: string) {
@@ -268,6 +274,16 @@ export function ProjectPage({ user, project, onLogout, onBack, onRenamed }: Prop
                 </p>
               )}
             </section>
+
+            <HistoryPanel
+              projectId={project.id}
+              versions={history}
+              disabled={running || editBusy}
+              onRestored={(v) => {
+                setVersion(v)
+                setSteps((s) => [...s, { key: Date.now(), kind: 'info', text: `Restored: ${v.summary}. Saved as version ${v.number}.` }])
+              }}
+            />
           </div>
 
           <section aria-labelledby={`${id}-preview`} className="panel preview-panel">

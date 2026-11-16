@@ -836,3 +836,107 @@ button {
 .edit-popover .textarea {
   min-height: 72px;
 }
+
+/* Step 10: history */
+.history-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.small-note {
+  font-size: 12px;
+}
+
+.history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+}
+
+.history-item.current {
+  border-color: var(--card-hover-border);
+}
+
+.history-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.history-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  flex-wrap: wrap;
+}
+
+.history-summary {
+  font-size: 13px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-time {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.kind {
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--raised);
+  color: var(--text-muted);
+}
+
+.kind-generate {
+  background: #1f2a44;
+  color: #9ec5ff;
+}
+
+.kind-edit {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.kind-move,
+.kind-offset {
+  background: #1d3329;
+  color: #9ee0b5;
+}
+
+.kind-restore {
+  background: #3a2c14;
+  color: #f5c97a;
+}
+
+.current-badge {
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--accent);
+  color: #fff;
+}
