@@ -1,5 +1,8 @@
-import { useEffect, useId, useState, type FormEvent } from 'react'
+import { useEffect, useId, useMemo, useState, type FormEvent } from 'react'
 import { api, ApiError, type Project, type User } from './api'
+import { ArrowRight, ArrowUpRight, Plus, Search } from './icons'
+import { formatDate } from './format'
+import { TopBar } from './TopBar'
 
 interface Props {
   user: User
@@ -7,23 +10,10 @@ interface Props {
   onOpen: (project: Project) => void
 }
 
-export function TopBar({ user, onLogout }: { user: User; onLogout: () => void }) {
-  return (
-    <header className="topbar">
-      <span className="brand">ABA</span>
-      <span>
-        Signed in as <strong>{user.username}</strong>{' '}
-        <button type="button" onClick={onLogout}>
-          Log out
-        </button>
-      </span>
-    </header>
-  )
-}
-
 export function Dashboard({ user, onLogout, onOpen }: Props) {
   const [projects, setProjects] = useState<Project[] | null>(null)
   const [name, setName] = useState('')
+  const [query, setQuery] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const id = useId()
@@ -35,8 +25,14 @@ export function Dashboard({ user, onLogout, onOpen }: Props) {
       .catch(() => setError('Could not load your projects.'))
   }, [])
 
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return (projects ?? []).filter((p) => !q || p.name.toLowerCase().includes(q))
+  }, [projects, query])
+
   async function create(e: FormEvent) {
     e.preventDefault()
+    if (!name.trim()) return
     setError('')
     setBusy(true)
     try {
@@ -48,48 +44,90 @@ export function Dashboard({ user, onLogout, onOpen }: Props) {
   }
 
   return (
-    <>
+    <div className="page">
       <TopBar user={user} onLogout={onLogout} />
-      <main className="card wide">
-        <h1>Your projects</h1>
+      <main className="container">
+        <section className="stack-24">
+          <div className="stack-8">
+            <h1 className="display">Your projects</h1>
+            <p className="lead">Describe an app, give it a name, and let the agent build it.</p>
+          </div>
 
-        <form className="row" onSubmit={create}>
-          <label htmlFor={`${id}-name`} className="sr-only">
-            New project name
-          </label>
-          <input
-            id={`${id}-name`}
-            placeholder="New project name, e.g. Coffee shop"
-            required
-            maxLength={80}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <button type="submit" disabled={busy}>
-            {busy ? 'Creating…' : 'New project'}
-          </button>
-        </form>
-        <p className="error" role="alert">
-          {error}
-        </p>
+          <form className="panel-form" onSubmit={create}>
+            <label htmlFor={`${id}-name`} className="sr-only">
+              New project name
+            </label>
+            <div className="input-icon grow">
+              <Plus size={18} className="input-glyph" />
+              <input
+                id={`${id}-name`}
+                className="input input-inset"
+                placeholder="New project name, e.g. Coffee shop"
+                required
+                maxLength={80}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </div>
+            <button type="submit" className="btn-primary" disabled={busy}>
+              {busy ? 'Creating…' : 'New project'}
+              <ArrowRight size={16} />
+            </button>
+          </form>
+          <p className="error" role="alert">
+            {error}
+          </p>
+        </section>
 
-        {projects === null ? (
-          <p>Loading…</p>
-        ) : projects.length === 0 ? (
-          <p>You have no projects yet. Give your first one a name above.</p>
-        ) : (
-          <ul className="projects">
-            {projects.map((p) => (
-              <li key={p.id}>
-                <button type="button" className="link" onClick={() => onOpen(p)}>
-                  {p.name}
-                </button>
-                <span className="muted"> · created {new Date(p.createdAt).toLocaleString()}</span>
-              </li>
-            ))}
-          </ul>
-        )}
+        <section className="stack-16">
+          <div className="section-head">
+            <h2 className="eyebrow">
+              All projects <span className="eyebrow-count">· {projects?.length ?? 0}</span>
+            </h2>
+            <div className="input-icon search">
+              <label htmlFor={`${id}-search`} className="sr-only">
+                Search projects
+              </label>
+              <Search size={16} className="input-glyph small" />
+              <input
+                id={`${id}-search`}
+                type="search"
+                className="input input-search"
+                placeholder="Search projects"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {projects === null ? (
+            <p className="empty">Loading…</p>
+          ) : projects.length === 0 ? (
+            <p className="empty">You have no projects yet. Give your first one a name above.</p>
+          ) : shown.length === 0 ? (
+            <p className="empty">No projects match your search.</p>
+          ) : (
+            <ul className="card-grid">
+              {shown.map((p) => (
+                <li key={p.id}>
+                  <button type="button" className="project-card" onClick={() => onOpen(p)}>
+                    <span className="card-top">
+                      <span className="initial" aria-hidden="true">
+                        {p.name.charAt(0).toUpperCase()}
+                      </span>
+                      <ArrowUpRight size={18} className="card-arrow" />
+                    </span>
+                    <span className="card-body">
+                      <span className="card-name">{p.name}</span>
+                      <span className="card-meta">Created {formatDate(p.createdAt)}</span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       </main>
-    </>
+    </div>
   )
 }

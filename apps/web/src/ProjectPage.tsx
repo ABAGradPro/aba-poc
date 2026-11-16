@@ -1,6 +1,8 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { api, ApiError, type Project, type RunEvent, type RunStatus, type User } from './api'
-import { TopBar } from './Dashboard'
+import { formatDate } from './format'
+import { ArrowLeft, ArrowRight } from './icons'
+import { TopBar } from './TopBar'
 
 interface Props {
   user: User
@@ -80,39 +82,51 @@ export function ProjectPage({ user, project, onLogout, onBack }: Props) {
   }
 
   return (
-    <>
+    <div className="page">
       <TopBar user={user} onLogout={onLogout} />
-      <main className="card wide">
-        <button type="button" className="link" onClick={onBack}>
-          ← All projects
-        </button>
-        <h1>{project.name}</h1>
+      <main className="container narrow">
+        <div className="stack-8">
+          <button type="button" className="btn-link back" onClick={onBack}>
+            <ArrowLeft size={16} />
+            All projects
+          </button>
+          <h1 className="display">{project.name}</h1>
+          <p className="lead">Created {formatDate(project.createdAt)}</p>
+        </div>
 
-        <form onSubmit={start}>
-          <label htmlFor={`${id}-prompt`}>Describe the app you want</label>
-          <textarea
-            id={`${id}-prompt`}
-            rows={4}
-            required
-            maxLength={4000}
-            placeholder="A landing page for a coffee shop in Amman with a menu and a contact form"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-          />
+        <form className="panel stack-form" onSubmit={start}>
+          <div className="field">
+            <label htmlFor={`${id}-prompt`}>Describe the app you want</label>
+            <textarea
+              id={`${id}-prompt`}
+              className="input textarea"
+              rows={4}
+              required
+              maxLength={4000}
+              placeholder="A landing page for a coffee shop in Amman with a menu and a contact form"
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+            />
+          </div>
           <p className="error" role="alert">
             {error}
           </p>
-          <button type="submit" disabled={running}>
-            {running ? 'Building…' : 'Build it'}
-          </button>
+          <div>
+            <button type="submit" className="btn-primary" disabled={running}>
+              {running ? 'Building…' : 'Build it'}
+              {!running && <ArrowRight size={16} />}
+            </button>
+          </div>
         </form>
 
-        <section aria-labelledby={`${id}-progress`} className="progress">
-          <h2 id={`${id}-progress`}>Progress</h2>
+        <section aria-labelledby={`${id}-progress`} className="panel stack-16">
+          <h2 id={`${id}-progress`} className="eyebrow">
+            Progress
+          </h2>
           {steps.length === 0 && !running ? (
             <p className="muted">Nothing yet. Describe your app and press “Build it”.</p>
           ) : (
-            <ol aria-live="polite">
+            <ol className="steps" aria-live="polite">
               {steps.map((s) => (
                 <li key={s.key} className={`step ${s.kind}`}>
                   {s.text}
@@ -127,6 +141,6 @@ export function ProjectPage({ user, project, onLogout, onBack }: Props) {
           )}
         </section>
       </main>
-    </>
+    </div>
   )
 }
