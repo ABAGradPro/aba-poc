@@ -106,7 +106,8 @@ export class ProjectsService {
     this.logger.log(`Deleted project ${project.id}; folder moved to ${moved ? to : '(none)'}`);
   }
 
-  private async assertIdle(projectId: string, action: string): Promise<void> {
+  /** 409 while a build or prompt edit is running for this project. */
+  async assertIdle(projectId: string, action: string): Promise<void> {
     const busy = await this.prisma.run.findFirst({
       where: { projectId, status: ACTIVE_RUN },
     });

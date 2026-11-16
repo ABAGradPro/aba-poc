@@ -84,6 +84,12 @@ export const api = {
     call<Project>(`/projects/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
   deleteProject: (id: string) => call<void>(`/projects/${id}`, { method: 'DELETE' }),
   versions: (projectId: string) => call<Version[]>(`/projects/${projectId}/versions`),
+  editElement: (projectId: string, id: string, prompt: string) =>
+    call<{ runId: string }>(`/projects/${projectId}/edits/element`, json({ id, prompt })),
+  moveElement: (projectId: string, id: string, parentId: string | null, beforeId: string | null) =>
+    call<Version>(`/projects/${projectId}/edits/move`, json({ id, parentId, beforeId })),
+  offsetElement: (projectId: string, id: string, dx: number, dy: number) =>
+    call<Version>(`/projects/${projectId}/edits/offset`, json({ id, dx, dy })),
   startRun: (projectId: string, prompt: string) =>
     call<{ runId: string }>(`/projects/${projectId}/runs`, json({ prompt })),
 

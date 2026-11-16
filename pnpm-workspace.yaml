@@ -1,5 +1,6 @@
 packages:
   - "apps/*"
+  - "packages/*"
 
 # Install scripts of dependencies. All of these ship ready-made binaries that work
 # without their scripts (argon2 hashing, Prisma generate/migrate and esbuild were

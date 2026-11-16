@@ -1,15 +1,21 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   Logger,
   NotFoundException,
   OnModuleInit,
 } from '@nestjs/common';
+import { readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { Observable, ReplaySubject } from 'rxjs';
+import { simpleGit } from 'simple-git';
+import { EditError, extractElement, parseEditReply, replaceElement } from '../edits/html-edits.js';
+import type { Project } from '../generated/prisma/client.js';
 import { HermesClient, type HermesEvent } from '../hermes/hermes.client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ProjectsService } from '../projects/projects.service.js';
-import { hermesPath, isUuid } from '../projects/workspace.js';
+import { hermesPath, hostPath, isUuid } from '../projects/workspace.js';
 import { VersionsService, type VersionInfo } from '../versions/versions.service.js';
 
 export type RunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'timeout';
@@ -31,6 +37,7 @@ export const FRIENDLY = {
   timeout: 'This took longer than 10 minutes, so it was stopped. Please try a smaller request.',
   failed: 'Something went wrong while building. Please try again.',
   noPage: 'The AI builder finished without making a page. Please try again with more detail.',
+  badEdit: "The AI's answer could not be used, so nothing was changed. Please try again or describe the change differently.",
 };
 
 /** What Hermes is asked to do for a prompt (guide, Step 8). */
@@ -38,15 +45,46 @@ export function generationInput(folder: string, prompt: string): string {
   return `Use the aba-generate-spa skill.\nWorkspace: ${hermesPath(folder)}\nRequest: ${prompt}`;
 }
 
+/** What Hermes is asked to do to change one element (guide, Step 9). */
+export function editInput(elementHtml: string, stylesCss: string, request: string): string {
+  return [
+    'Use the aba-edit-element skill.',
+    'Element:',
+    elementHtml,
+    '',
+    'Current styles.css (for reference only; do not repeat it):',
+    stylesCss || '(empty)',
+    '',
+    `Request: ${request}`,
+  ].join('\n');
+}
+
+const EDIT_INSTRUCTIONS =
+  'This is an edit of one element. Do not create, change or delete any files. Reply only with the JSON object.';
+
 interface LiveRun {
   projectId: string;
   events: ReplaySubject<RunEvent>;
+}
+
+/** One kind of Hermes job: how to ask, and what to do with the answer. */
+interface Job {
+  input: string;
+  instructions: string;
+  sessionId: string;
+  /** Called once Hermes reports run.completed, with its full final answer. */
+  finish: (runId: string, live: LiveRun, output: string, summary: string | undefined) => Promise<void>;
 }
 
 function str(v: unknown, max = 2000): string | undefined {
   if (typeof v === 'string' && v.length) return v.length > max ? v.slice(0, max) + '…' : v;
   return undefined;
 }
+
+const short = (s: string, max = 60) => {
+  const one = s.trim().replace(/\s+/g, ' ');
+  return one.length > max ? one.slice(0, max - 1) + '…' : one;
+};
 
 @Injectable()
 export class RunsService implements OnModuleInit {
@@ -74,27 +112,40 @@ export class RunsService implements OnModuleInit {
     if (count) this.logger.warn(`Marked ${count} interrupted run(s) as failed`);
   }
 
-  /** Saves the run and returns at once; the Hermes run is started and followed in the background. */
+  /** Build (or rebuild) the app from a prompt. Answers at once; Hermes runs in the background. */
   async start(userId: string, projectId: string, prompt: string): Promise<{ runId: string }> {
     const project = await this.projects.getOwned(userId, projectId);
-    if (this.starting.has(project.id)) throw this.busy();
-    this.starting.add(project.id);
-    try {
-      const busy = await this.prisma.run.findFirst({
-        where: { projectId: project.id, status: { in: ACTIVE } },
-      });
-      if (busy) throw this.busy();
-      const run = await this.prisma.run.create({
-        data: { projectId: project.id, prompt, status: 'queued' },
-      });
-      const live: LiveRun = { projectId: project.id, events: new ReplaySubject<RunEvent>(500) };
-      this.live.set(run.id, live);
-      this.emit(live, { type: 'run.status', status: 'queued', text: 'Waiting for the AI builder…' });
-      void this.follow(run.id, project.id, project.folder, prompt, live);
-      return { runId: run.id };
-    } finally {
-      this.starting.delete(project.id);
-    }
+    return this.launch(project, prompt, () => ({
+      input: generationInput(project.folder, prompt),
+      instructions: `Work only inside ${hermesPath(project.folder)}.`,
+      sessionId: project.id,
+      finish: (id, live, _output, summary) => this.finishGeneration(id, project, prompt, live, summary),
+    }));
+  }
+
+  /** Change one element by prompt with the aba-edit-element skill (guide, Step 9). */
+  async startEdit(
+    userId: string,
+    projectId: string,
+    elementId: string,
+    request: string,
+  ): Promise<{ runId: string }> {
+    const project = await this.projects.getOwned(userId, projectId);
+    // "Busy" comes first: a build in progress may be rewriting the page right now.
+    await this.projects.assertIdle(project.id, 'edited');
+    const dir = hostPath(project.folder);
+    const page = await readFile(path.join(dir, 'index.html'), 'utf8').catch(() => null);
+    if (page === null) throw new BadRequestException('Build the app first, then edit it.');
+    const element = extractElement(page, elementId);
+    if (!element) throw new NotFoundException('That element no longer exists. Reload the preview and try again.');
+    const styles = (await readFile(path.join(dir, 'styles.css'), 'utf8').catch(() => '')).slice(0, 8000);
+
+    return this.launch(project, `edit ${elementId}: ${request}`, (runId) => ({
+      input: editInput(element, styles, request),
+      instructions: EDIT_INSTRUCTIONS,
+      sessionId: `${project.id}-edit-${runId}`, // a fresh conversation for each edit
+      finish: (id, live, output) => this.finishEdit(id, project, elementId, live, output),
+    }));
   }
 
   /** The run's events for its owner: everything so far, then live ones. */
@@ -111,6 +162,32 @@ export class RunsService implements OnModuleInit {
       sub.next({ type: 'run.status', status: run.status as RunStatus, at: Date.now() });
       sub.complete();
     });
+  }
+
+  /** Saves the run (409 if the project is busy) and follows the Hermes job in the background. */
+  private async launch(
+    project: Project,
+    prompt: string,
+    jobFor: (runId: string) => Job,
+  ): Promise<{ runId: string }> {
+    if (this.starting.has(project.id)) throw this.busy();
+    this.starting.add(project.id);
+    try {
+      const busy = await this.prisma.run.findFirst({
+        where: { projectId: project.id, status: { in: ACTIVE } },
+      });
+      if (busy) throw this.busy();
+      const run = await this.prisma.run.create({
+        data: { projectId: project.id, prompt, status: 'queued' },
+      });
+      const live: LiveRun = { projectId: project.id, events: new ReplaySubject<RunEvent>(500) };
+      this.live.set(run.id, live);
+      this.emit(live, { type: 'run.status', status: 'queued', text: 'Waiting for the AI builder…' });
+      void this.follow(run.id, live, jobFor(run.id));
+      return { runId: run.id };
+    } finally {
+      this.starting.delete(project.id);
+    }
   }
 
   private busy(): ConflictException {
@@ -131,14 +208,10 @@ export class RunsService implements OnModuleInit {
     }
   }
 
-  private async follow(runId: string, projectId: string, folder: string, prompt: string, live: LiveRun) {
+  private async follow(runId: string, live: LiveRun, job: Job) {
     let hermesRunId: string;
     try {
-      hermesRunId = await this.hermes.startRun(
-        generationInput(folder, prompt),
-        `Work only inside ${hermesPath(folder)}.`,
-        projectId,
-      );
+      hermesRunId = await this.hermes.startRun(job.input, job.instructions, job.sessionId);
     } catch (err) {
       this.logger.warn(`Run ${runId}: could not start Hermes run: ${String(err)}`);
       await this.setStatus(runId, live, 'failed', FRIENDLY.unavailable);
@@ -156,16 +229,11 @@ export class RunsService implements OnModuleInit {
     }, this.timeoutMs);
     timer.unref();
 
-    let final: RunStatus | undefined;
-    let finalText: string | undefined;
+    let outcome: { status: RunStatus; text?: string; output: string } | undefined;
     try {
       for await (const e of this.hermes.events(hermesRunId, abort.signal)) {
-        const outcome = await this.handle(runId, hermesRunId, live, e);
-        if (outcome) {
-          final = outcome.status;
-          finalText = outcome.text;
-          break;
-        }
+        outcome = await this.handle(runId, hermesRunId, live, e);
+        if (outcome) break;
       }
     } catch (err) {
       if (!timedOut) this.logger.warn(`Run ${runId}: event stream ended: ${String(err)}`);
@@ -175,41 +243,78 @@ export class RunsService implements OnModuleInit {
     }
 
     if (timedOut) await this.setStatus(runId, live, 'timeout', FRIENDLY.timeout);
-    else if (final === 'completed') await this.finishGeneration(runId, projectId, folder, prompt, live, finalText);
-    else if (final) await this.setStatus(runId, live, final, finalText);
+    else if (outcome?.status === 'completed') await job.finish(runId, live, outcome.output, outcome.text);
+    else if (outcome) await this.setStatus(runId, live, outcome.status, outcome.text);
     else await this.setStatus(runId, live, 'failed', FRIENDLY.failed);
   }
 
-  /** Tidy, commit and record the result as a new version, then report it. */
+  /** After a build: tidy, commit and record the result as a new version, then report it. */
   private async finishGeneration(
     runId: string,
-    projectId: string,
-    folder: string,
+    project: Project,
     prompt: string,
     live: LiveRun,
-    finalText?: string,
+    summary?: string,
   ) {
     try {
-      const version = await this.versions.saveGeneration(projectId, folder, prompt);
+      const version = await this.versions.saveGeneration(project.id, project.folder, prompt);
       if (!version) {
         await this.setStatus(runId, live, 'failed', FRIENDLY.noPage);
         return;
       }
       this.emit(live, { type: 'version.created', version, text: `Saved as version ${version.number}.` });
-      await this.setStatus(runId, live, 'completed', finalText);
+      await this.setStatus(runId, live, 'completed', summary);
     } catch (err) {
       this.logger.error(`Run ${runId}: could not save the version: ${String(err)}`);
       await this.setStatus(runId, live, 'failed', FRIENDLY.failed);
     }
   }
 
-  /** Forwards one Hermes event; returns the final status when the run is over. */
+  /**
+   * After an element edit: throw away any file Hermes may have touched, check its JSON answer,
+   * replace just that element, append the CSS to styles.css and commit "edit: <id>".
+   * An answer that fails the check changes nothing.
+   */
+  private async finishEdit(runId: string, project: Project, elementId: string, live: LiveRun, output: string) {
+    const dir = hostPath(project.folder);
+    try {
+      const git = simpleGit(dir);
+      await git.reset(['--hard', 'HEAD']);
+      await git.clean('f', ['-d']);
+
+      let reply: { html: string; css: string };
+      try {
+        reply = parseEditReply(output, elementId);
+      } catch (err) {
+        this.logger.warn(`Run ${runId}: unusable edit answer: ${String(err)}`);
+        await this.setStatus(runId, live, 'failed', FRIENDLY.badEdit);
+        return;
+      }
+
+      const index = path.join(dir, 'index.html');
+      await writeFile(index, replaceElement(await readFile(index, 'utf8'), elementId, reply.html));
+      if (reply.css) {
+        const styles = path.join(dir, 'styles.css');
+        const before = await readFile(styles, 'utf8').catch(() => '');
+        await writeFile(styles, `${before.replace(/\s*$/, '')}\n\n/* edit: ${elementId} */\n${reply.css}\n`);
+      }
+      const version = await this.versions.commitChange(project.id, project.folder, 'edit', `edit: ${elementId}`);
+      this.emit(live, { type: 'version.created', version, text: `Saved as version ${version.number}.` });
+      await this.setStatus(runId, live, 'completed', `Changed “${short(elementId)}”.`);
+    } catch (err) {
+      const message = err instanceof EditError ? err.message : FRIENDLY.failed;
+      this.logger.error(`Run ${runId}: could not apply the edit: ${String(err)}`);
+      await this.setStatus(runId, live, 'failed', message);
+    }
+  }
+
+  /** Forwards one Hermes event; returns the outcome when the run is over. */
   private async handle(
     runId: string,
     hermesRunId: string,
     live: LiveRun,
     e: HermesEvent,
-  ): Promise<{ status: RunStatus; text?: string } | undefined> {
+  ): Promise<{ status: RunStatus; text?: string; output: string } | undefined> {
     switch (e.event) {
       case 'approval.request': {
         // Hermes wants extra permissions. ABA never grants them.
@@ -220,11 +325,15 @@ export class RunsService implements OnModuleInit {
         return;
       }
       case 'run.completed':
-        return { status: 'completed', text: str(e.output) ?? 'Done.' };
+        return {
+          status: 'completed',
+          text: str(e.output) ?? 'Done.',
+          output: typeof e.output === 'string' ? e.output : '',
+        };
       case 'run.failed':
       case 'run.cancelled':
       case 'run.interrupted':
-        return { status: 'failed', text: FRIENDLY.failed };
+        return { status: 'failed', text: FRIENDLY.failed, output: '' };
       default:
         this.emit(live, {
           type: e.event,

@@ -1,6 +1,8 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import express, { type Request, type Response } from 'express';
+import { readFileSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
@@ -9,10 +11,20 @@ import { hostPath, isUuid } from '../projects/workspace.js';
 
 export const EDIT_MODE_TAG = '<script src="/__aba/edit-mode.js" defer></script>';
 
-/** Filled in by Step 9 (click-to-edit). For now it only announces itself. */
-const EDIT_MODE_JS = `// ABA edit mode (Step 9 adds click-to-edit here)
-window.__abaEditMode = { ready: true };
-`;
+/** The GUI's origin: the only page edit mode will listen to and talk to. */
+const GUI_ORIGIN = process.env.GUI_ORIGIN ?? 'http://localhost:5173';
+
+/** The edit-mode bundle from packages/edit-mode (built with esbuild), with the GUI origin filled in. */
+function loadEditMode(log: Logger): string {
+  try {
+    const pkg = createRequire(import.meta.url).resolve('@aba/edit-mode/package.json');
+    const js = readFileSync(path.join(path.dirname(pkg), 'dist', 'edit-mode.js'), 'utf8');
+    return js.replaceAll('__ABA_PARENT_ORIGIN__', GUI_ORIGIN);
+  } catch (err) {
+    log.warn(`Edit mode is not built (pnpm --filter @aba/edit-mode build): ${String(err)}`);
+    return '/* ABA edit mode is not built */';
+  }
+}
 
 /** Adds the edit-mode script right before </body> (or at the end if there is none). */
 export function injectEditMode(html: string): string {
@@ -43,8 +55,9 @@ export class PreviewServer implements OnModuleInit, OnModuleDestroy {
       res.setHeader('Cache-Control', 'no-store'); // a reload always shows the newest version
       next();
     });
+    const editMode = loadEditMode(this.logger);
     app.get('/__aba/edit-mode.js', (_req, res) => {
-      res.type('application/javascript').send(EDIT_MODE_JS);
+      res.type('application/javascript').send(editMode);
     });
     app.use((req, res) => void this.serve(req, res));
 
