@@ -10,6 +10,7 @@ import { HermesClient, type HermesEvent } from '../hermes/hermes.client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ProjectsService } from '../projects/projects.service.js';
 import { hermesPath, isUuid } from '../projects/workspace.js';
+import { VersionsService, type VersionInfo } from '../versions/versions.service.js';
 
 export type RunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'timeout';
 const ACTIVE: RunStatus[] = ['queued', 'running'];
@@ -21,6 +22,7 @@ export interface RunEvent {
   text?: string;
   tool?: string;
   status?: RunStatus;
+  version?: VersionInfo; // on "version.created"
   at: number;
 }
 
@@ -28,7 +30,13 @@ export const FRIENDLY = {
   unavailable: "The AI builder isn't running right now. Please try again in a minute.",
   timeout: 'This took longer than 10 minutes, so it was stopped. Please try a smaller request.',
   failed: 'Something went wrong while building. Please try again.',
+  noPage: 'The AI builder finished without making a page. Please try again with more detail.',
 };
+
+/** What Hermes is asked to do for a prompt (guide, Step 8). */
+export function generationInput(projectId: string, prompt: string): string {
+  return `Use the aba-generate-spa skill.\nWorkspace: ${hermesPath(projectId)}\nRequest: ${prompt}`;
+}
 
 interface LiveRun {
   projectId: string;
@@ -50,6 +58,7 @@ export class RunsService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly projects: ProjectsService,
     private readonly hermes: HermesClient,
+    private readonly versions: VersionsService,
   ) {}
 
   private get timeoutMs(): number {
@@ -126,7 +135,7 @@ export class RunsService implements OnModuleInit {
     let hermesRunId: string;
     try {
       hermesRunId = await this.hermes.startRun(
-        prompt,
+        generationInput(projectId, prompt),
         `Work only inside ${hermesPath(projectId)}.`,
         projectId,
       );
@@ -166,8 +175,31 @@ export class RunsService implements OnModuleInit {
     }
 
     if (timedOut) await this.setStatus(runId, live, 'timeout', FRIENDLY.timeout);
+    else if (final === 'completed') await this.finishGeneration(runId, projectId, prompt, live, finalText);
     else if (final) await this.setStatus(runId, live, final, finalText);
     else await this.setStatus(runId, live, 'failed', FRIENDLY.failed);
+  }
+
+  /** Tidy, commit and record the result as a new version, then report it. */
+  private async finishGeneration(
+    runId: string,
+    projectId: string,
+    prompt: string,
+    live: LiveRun,
+    finalText?: string,
+  ) {
+    try {
+      const version = await this.versions.saveGeneration(projectId, prompt);
+      if (!version) {
+        await this.setStatus(runId, live, 'failed', FRIENDLY.noPage);
+        return;
+      }
+      this.emit(live, { type: 'version.created', version, text: `Saved as version ${version.number}.` });
+      await this.setStatus(runId, live, 'completed', finalText);
+    } catch (err) {
+      this.logger.error(`Run ${runId}: could not save the version: ${String(err)}`);
+      await this.setStatus(runId, live, 'failed', FRIENDLY.failed);
+    }
   }
 
   /** Forwards one Hermes event; returns the final status when the run is over. */

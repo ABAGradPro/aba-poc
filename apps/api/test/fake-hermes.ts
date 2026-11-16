@@ -1,7 +1,15 @@
 import { createServer, type Server } from 'node:http';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
+import path from 'node:path';
 
-export type Script = 'complete' | 'approval' | 'slow' | 'hang';
+export type Script = 'complete' | 'approval' | 'slow' | 'hang' | 'nopage';
+
+/** The page the fake Hermes "builds": the <p> and <script> have no data-aba-id on purpose. */
+export const FAKE_PAGE =
+  '<!DOCTYPE html><html><head><link rel="stylesheet" href="styles.css"></head>' +
+  '<body><main data-aba-id="main"><h1 data-aba-id="title">Fake bakery</h1><p>Fresh bread</p></main>' +
+  '<script src="app.js"></script></body></html>';
 
 /** A stand-in for the Hermes Runs API, so tests are fast, free and need no model. */
 export class FakeHermes {
@@ -9,6 +17,8 @@ export class FakeHermes {
   readonly calls: { method: string; path: string; body: any }[] = [];
   private server!: Server;
   url = '';
+  /** Where projects live, so a run can write files like the real Hermes does. */
+  workspaces = '';
 
   async start(): Promise<void> {
     this.server = createServer((req, res) => {
@@ -22,6 +32,13 @@ export class FakeHermes {
           return;
         }
         if (req.method === 'POST' && req.url === '/v1/runs') {
+          if (this.workspaces && this.script !== 'nopage' && body?.session_id) {
+            const dir = path.join(this.workspaces, String(body.session_id));
+            mkdirSync(dir, { recursive: true });
+            writeFileSync(path.join(dir, 'index.html'), FAKE_PAGE);
+            writeFileSync(path.join(dir, 'styles.css'), 'body{font-family:sans-serif}');
+            writeFileSync(path.join(dir, 'app.js'), '');
+          }
           res.writeHead(202, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ run_id: `run_${this.calls.length}`, status: 'queued' }));
           return;

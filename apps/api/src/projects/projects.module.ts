@@ -4,10 +4,13 @@ import { RunsController } from '../runs/runs.controller.js';
 import { RunsService } from '../runs/runs.service.js';
 import { ProjectsController } from './projects.controller.js';
 import { ProjectsService } from './projects.service.js';
+import { VersionsController } from '../versions/versions.controller.js';
+import { VersionsService } from '../versions/versions.service.js';
+import { PreviewServer } from '../preview/preview.server.js';
 
 @Module({
-  controllers: [ProjectsController, RunsController],
-  providers: [ProjectsService, RunsService, HermesClient],
+  controllers: [ProjectsController, RunsController, VersionsController],
+  providers: [ProjectsService, RunsService, HermesClient, VersionsService, PreviewServer],
   exports: [ProjectsService, RunsService],
 })
 export class ProjectsModule {}

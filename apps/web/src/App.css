@@ -529,3 +529,95 @@ button {
   text-align: center;
   color: var(--text-muted);
 }
+
+/* Step 8: workspace with live preview */
+.container.workspace {
+  max-width: 1320px;
+  gap: 24px;
+}
+
+.stack-4 {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 960px) {
+  .split {
+    grid-template-columns: 1fr;
+  }
+}
+
+.preview-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: sticky;
+  top: 24px;
+}
+
+.preview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.preview-version {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.version-badge {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft-2);
+  color: var(--accent-text);
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.btn-ghost.small {
+  height: 34px;
+  padding: 0 12px;
+  font-size: 13px;
+  text-decoration: none;
+  flex: 0 0 auto;
+}
+
+.preview-frame {
+  width: 100%;
+  height: min(72vh, 820px);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.preview-empty {
+  height: min(72vh, 820px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  border: 1px dashed var(--border-strong);
+  border-radius: 12px;
+}

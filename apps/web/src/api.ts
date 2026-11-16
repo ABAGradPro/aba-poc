@@ -9,6 +9,20 @@ export interface Project {
   createdAt: string
 }
 
+/** A saved version of a project (GET /api/projects/:id/versions). */
+export interface Version {
+  id: string
+  number: number
+  kind: string
+  summary: string
+  commitSha: string
+  createdAt: string
+}
+
+/** The preview server: a different origin from this GUI, so generated code cannot reach the session. */
+export const PREVIEW_ORIGIN: string =
+  (import.meta.env.VITE_PREVIEW_ORIGIN as string | undefined) ?? 'http://localhost:4000'
+
 export type RunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'timeout'
 
 /** One step of a run, as streamed by GET /api/runs/:id/events. */
@@ -17,6 +31,7 @@ export interface RunEvent {
   text?: string
   tool?: string
   status?: RunStatus
+  version?: Version
   at: number
 }
 
@@ -64,6 +79,7 @@ export const api = {
   projects: () => call<Project[]>('/projects'),
   project: (id: string) => call<Project>(`/projects/${id}`),
   createProject: (name: string) => call<Project>('/projects', json({ name })),
+  versions: (projectId: string) => call<Version[]>(`/projects/${projectId}/versions`),
   startRun: (projectId: string, prompt: string) =>
     call<{ runId: string }>(`/projects/${projectId}/runs`, json({ prompt })),
 
