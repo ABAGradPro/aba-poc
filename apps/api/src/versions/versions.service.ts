@@ -3,6 +3,7 @@ import { access, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
 import type { Version } from '../generated/prisma/client.js';
+import { pruneStock } from '../images/images.store.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ProjectsService } from '../projects/projects.service.js';
 import { hostPath } from '../projects/workspace.js';
@@ -48,6 +49,8 @@ export class VersionsService {
     const index = path.join(dir, 'index.html');
     if (!(await this.exists(index))) return null;
 
+    const removed = await pruneStock(dir);
+    if (removed.length) this.logger.log(`Project ${projectId}: removed ${removed.length} unused stock photo(s)`);
     const summary = `generate: ${short(prompt.trim().replace(/\s+/g, ' '))}`;
     return this.commitChange(projectId, folder, 'generate', summary);
   }

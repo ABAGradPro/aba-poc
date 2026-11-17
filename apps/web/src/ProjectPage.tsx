@@ -5,6 +5,7 @@ import {
   PREVIEW_ORIGIN,
   PUBLISH_BASE,
   type Project,
+  type ProjectImage,
   type RunEvent,
   type RunStatus,
   type User,
@@ -14,6 +15,8 @@ import { formatDate } from './format'
 import { ArrowLeft, ArrowRight, ArrowUpRight, Pencil } from './icons'
 import { EditPopover, type Selection } from './EditPopover'
 import { HistoryPanel } from './HistoryPanel'
+import { ImagesPanel } from './ImagesPanel'
+import { MessagesPanel } from './MessagesPanel'
 import { PublishPanel } from './PublishPanel'
 import { ActionButtons, DeleteDialog, RenameForm } from './ProjectActions'
 import { TopBar } from './TopBar'
@@ -72,6 +75,11 @@ export function ProjectPage({ user, project, onLogout, onBack, onRenamed }: Prop
   const [editOn, setEditOn] = useState(false)
   const [selected, setSelected] = useState<Selection | null>(null)
   const [editBusy, setEditBusy] = useState(false)
+  const [images, setImages] = useState<ProjectImage[]>([])
+  const [askImages, setAskImages] = useState(false)
+  // The page of the site that is open in the preview ("#/about"), reported by edit mode.
+  const [route, setRoute] = useState('')
+  const pick = useRef<HTMLInputElement>(null)
   const frame = useRef<HTMLIFrameElement>(null)
   const stop = useRef<() => void>(() => undefined)
   const id = useId()
@@ -89,6 +97,14 @@ export function ProjectPage({ user, project, onLogout, onBack, onRenamed }: Prop
       })
       .catch(() => setHistory([]))
       .finally(() => setLoaded(true))
+  }, [project.id, version?.commitSha])
+
+  // The project's images; a build can add stock photos, so look again after each new version.
+  useEffect(() => {
+    api
+      .images(project.id)
+      .then(setImages)
+      .catch(() => setImages([]))
   }, [project.id, version?.commitSha])
 
   /** Follows a run (a build, a prompt edit, a publish or a roll back) and shows its progress. */
@@ -136,8 +152,35 @@ export function ProjectPage({ user, project, onLogout, onBack, onRenamed }: Prop
     setMessage('')
   }
 
-  async function start(e: FormEvent) {
+  // ABA asks once per project, before the first build without own images, whether to add some.
+  const askedKey = `aba:asked-images:${project.id}`
+  function alreadyAsked(): boolean {
+    try {
+      return window.localStorage.getItem(askedKey) === '1'
+    } catch {
+      return false // storage is blocked: ask again next time
+    }
+  }
+  function markAsked() {
+    try {
+      window.localStorage.setItem(askedKey, '1')
+    } catch {
+      // storage is blocked: nothing to remember
+    }
+  }
+
+  function start(e: FormEvent) {
     e.preventDefault()
+    if (!images.some((i) => !i.stock) && !alreadyAsked()) {
+      setAskImages(true)
+      return
+    }
+    void build()
+  }
+
+  async function build() {
+    setAskImages(false)
+    markAsked()
     resetProgress()
     try {
       follow((await api.startRun(project.id, prompt)).runId)
@@ -181,6 +224,12 @@ export function ProjectPage({ user, project, onLogout, onBack, onRenamed }: Prop
       const d = e.data as Record<string, unknown> | null
       if (!d || typeof d.type !== 'string') return
       if (d.type === 'aba:ready') sendEdit()
+      if (d.type === 'aba:route') {
+        const hash = typeof d.hash === 'string' ? d.hash : ''
+        if (/^#\/[a-z0-9-]{1,40}$/.test(hash)) setRoute(hash)
+        else if (hash === '') setRoute('')
+        // any other hash (an in-page anchor) keeps the last page
+      }
       if (d.type === 'aba:select') {
         setSelected(typeof d.id === 'string' ? { id: d.id, label: String(d.label ?? ''), rect: d.rect as Selection['rect'] } : null)
       }
@@ -213,8 +262,9 @@ export function ProjectPage({ user, project, onLogout, onBack, onRenamed }: Prop
   // A new version reloads the preview, so the old selection is gone.
   useEffect(() => setSelected(null), [version?.commitSha])
 
-  // The commit id in the URL makes the iframe load the new version after each save.
-  const previewUrl = version ? `${PREVIEW_ORIGIN}/p/${project.id}/?v=${version.commitSha.slice(0, 12)}` : ''
+  // The commit id in the URL makes the iframe load the new version after each save; the page
+  // that was open (#/about) is kept, so an edit does not jump back to the home page.
+  const previewUrl = version ? `${PREVIEW_ORIGIN}/p/${project.id}/?v=${version.commitSha.slice(0, 12)}${route}` : ''
 
   return (
     <div className="page">
@@ -264,6 +314,31 @@ export function ProjectPage({ user, project, onLogout, onBack, onRenamed }: Prop
               <p className="error" role="alert">
                 {error}
               </p>
+              {askImages && (
+                <div className="ask-box" role="group" aria-label="Your own images">
+                  <p>
+                    <strong>Do you want to add your own images?</strong> For example your logo, or photos of your
+                    place and products. Without them, free stock photos are used.
+                  </p>
+                  <div className="row-8">
+                    <button
+                      type="button"
+                      className="btn-primary compact"
+                      onClick={() => {
+                        setAskImages(false)
+                        markAsked()
+                        pick.current?.click()
+                      }}
+                    >
+                      Add my images
+                    </button>
+                    <button type="button" className="btn-ghost compact" onClick={() => void build()}>
+                      No, use stock photos
+                    </button>
+                  </div>
+                  <p className="hint">After adding images, press “Build it” again.</p>
+                </div>
+              )}
               <div>
                 <button type="submit" className="btn-primary" disabled={running}>
                   {running ? 'Building…' : 'Build it'}
@@ -271,6 +346,14 @@ export function ProjectPage({ user, project, onLogout, onBack, onRenamed }: Prop
                 </button>
               </div>
             </form>
+
+            <ImagesPanel
+              projectId={project.id}
+              images={images}
+              disabled={running || editBusy}
+              pickRef={pick}
+              onChange={setImages}
+            />
 
             <section aria-labelledby={`${id}-progress`} className="panel stack-16">
               <h2 id={`${id}-progress`} className="eyebrow">
@@ -312,6 +395,8 @@ export function ProjectPage({ user, project, onLogout, onBack, onRenamed }: Prop
                 setSteps((s) => [...s, { key: Date.now(), kind: 'info', text: `Restored: ${v.summary}. Saved as version ${v.number}.` }])
               }}
             />
+
+            <MessagesPanel projectId={project.id} />
           </div>
 
           <section aria-labelledby={`${id}-preview`} className="panel preview-panel">

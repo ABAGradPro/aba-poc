@@ -6,6 +6,7 @@
 // Messages here → ABA:       aba:select { id, rect, tag, label }
 //                            aba:move   { id, parentId, beforeId }   (drag)
 //                            aba:offset { id, dx, dy }               (Alt-drag)
+//                            aba:route  { hash }                     (the open page, e.g. "#/about")
 
 /** Replaced by the preview server with the GUI's origin, e.g. "http://localhost:5173". */
 const PARENT_ORIGIN = '__ABA_PARENT_ORIGIN__';
@@ -211,5 +212,12 @@ document.addEventListener(
   true,
 );
 
+// Tell ABA which page of the site is open, so the preview can return to it after a reload.
+function sendRoute(): void {
+  send({ type: 'aba:route', hash: location.hash });
+}
+window.addEventListener('hashchange', sendRoute);
+
 document.head.appendChild(style);
 send({ type: 'aba:ready' });
+sendRoute();

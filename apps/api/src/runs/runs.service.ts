@@ -13,6 +13,7 @@ import { simpleGit } from 'simple-git';
 import { EditError, extractElement, parseEditReply, replaceElement } from '../edits/html-edits.js';
 import type { Project } from '../generated/prisma/client.js';
 import { HermesClient, type HermesEvent } from '../hermes/hermes.client.js';
+import { describeUserImages } from '../images/images.store.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ProjectsService } from '../projects/projects.service.js';
 import { hermesPath, hostPath, isUuid } from '../projects/workspace.js';
@@ -58,8 +59,9 @@ const RELEASE_INSTRUCTIONS =
   'Follow the skill exactly. Do not create, change or delete any files in the workspace. Finish with one short sentence for a non-technical user.';
 
 /** What Hermes is asked to do for a prompt (guide, Step 8). */
-export function generationInput(folder: string, prompt: string): string {
-  return `Use the aba-generate-spa skill.\nWorkspace: ${hermesPath(folder)}\nRequest: ${prompt}`;
+export function generationInput(folder: string, prompt: string, userImages = ''): string {
+  const base = `Use the aba-generate-spa skill.\nWorkspace: ${hermesPath(folder)}\nRequest: ${prompt}`;
+  return userImages ? `${base}\n${userImages}` : base;
 }
 
 /** What Hermes is asked to do to change one element (guide, Step 9). */
@@ -132,8 +134,9 @@ export class RunsService implements OnModuleInit {
   /** Build (or rebuild) the app from a prompt. Answers at once; Hermes runs in the background. */
   async start(userId: string, projectId: string, prompt: string): Promise<{ runId: string }> {
     const project = await this.projects.getOwned(userId, projectId);
+    const userImages = await describeUserImages(hostPath(project.folder));
     return this.launch(project, prompt, () => ({
-      input: generationInput(project.folder, prompt),
+      input: generationInput(project.folder, prompt, userImages),
       instructions: `Work only inside ${hermesPath(project.folder)}.`,
       sessionId: project.id,
       finish: (id, live, _output, summary) => this.finishGeneration(id, project, prompt, live, summary),
